@@ -11,7 +11,10 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict
 
-from indexer.schema_graph import SchemaGraph, TableSchema, RelationEdge
+try:
+    from indexer.schema_graph import SchemaGraph, TableSchema, RelationEdge
+except ImportError:
+    from schema_graph import SchemaGraph, TableSchema, RelationEdge
 
 # 跨平台文件锁
 try:

@@ -14,8 +14,14 @@ from typing import List, Set, Dict, Tuple, Optional
 from collections import defaultdict, deque
 from dataclasses import dataclass
 
-from indexer.schema_graph import SchemaGraph, RelationEdge
-from indexer import SimpleLogger
+try:
+    from indexer.schema_graph import SchemaGraph, RelationEdge
+except ImportError:
+    from schema_graph import SchemaGraph, RelationEdge
+try:
+    from indexer import SimpleLogger
+except ImportError:
+    from __init__ import SimpleLogger
 
 
 @dataclass

@@ -14,8 +14,14 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
-from indexer.schema_graph import SchemaGraph, RelationEdge
-from indexer import SimpleLogger
+try:
+    from indexer.schema_graph import SchemaGraph, RelationEdge
+except ImportError:
+    from schema_graph import SchemaGraph, RelationEdge
+try:
+    from indexer import SimpleLogger
+except ImportError:
+    from __init__ import SimpleLogger
 
 
 # vis.js CDN URL 和版本

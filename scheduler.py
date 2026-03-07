@@ -11,7 +11,10 @@ from typing import Optional, Callable
 
 import schedule
 
-from indexer import SimpleLogger
+try:
+    from indexer import SimpleLogger
+except ImportError:
+    from __init__ import SimpleLogger
 
 
 class DelayedTask:
