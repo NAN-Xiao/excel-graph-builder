@@ -11,7 +11,8 @@ import time
 from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, Set, Tuple, List
+from typing import Optional, Set, Tuple, List, Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from indexer.models import SchemaGraph, TableSchema, RelationEdge
 from indexer import SimpleLogger
@@ -56,9 +57,11 @@ class GraphBuilder:
     使用策略模式组织关系发现，支持混乱数据
     """
 
-    def __init__(self, config=None):
+    def __init__(self, config=None, progress_callback: Optional[Callable[[str, int, int], None]] = None):
         self.config = config or BuildConfig()
         self.logger = SimpleLogger()
+        # E5: fn(phase_name, current, total)
+        self.progress_callback = progress_callback
 
         # 初始化各 Phase
         self.discovery_strategies = [
@@ -66,7 +69,8 @@ class GraphBuilder:
             ContainmentDiscovery(
                 containment_threshold=self.config.containment_threshold,
                 overlap_threshold=0.8,
-                min_sample_size=self.config.min_sample_size
+                min_sample_size=self.config.min_sample_size,
+                small_pk_threshold=self.config.small_pk_threshold,
             ),
             AbbreviationDiscovery(
                 confidence_threshold=self.config.abbrev_confidence_threshold
@@ -122,15 +126,23 @@ class GraphBuilder:
         scan_start = time.time()
         self.logger.info("\n[扫描] 扫描 Excel 文件...")
         scanner = self._get_scanner()
-        scan_results = scanner.scan(existing_graph=graph if incremental else None)
+        scan_results = scanner.scan(
+            existing_graph=graph if incremental else None)
 
         for table_schema in scan_results['new']:
+            self._assign_domain_label(table_schema)
             graph.add_table(table_schema)
             result.new_tables += 1
         for table_schema in scan_results['updated']:
             graph.remove_table(table_schema.name)
+            self._assign_domain_label(table_schema)
             graph.add_table(table_schema)
             result.updated_tables += 1
+
+        # 补全存量表的 domain_label（从 JSON 加载的旧表可能缺失）
+        for table in graph.tables.values():
+            if not table.domain_label:
+                self._assign_domain_label(table)
 
         result.scan_time = time.time() - scan_start
         self.logger.info(
@@ -138,23 +150,50 @@ class GraphBuilder:
             f"{result.updated_tables} 更新, {result.deleted_tables} 删除"
         )
 
-        # Phase 2: 执行关系发现
+        # Phase 2: 执行关系发现（P5: 并行执行独立策略）
         discover_start = time.time()
         self.logger.info("\n[关系发现] 执行所有策略...")
         if incremental and (result.new_tables > 0 or result.updated_tables > 0 or result.deleted_tables > 0):
             graph.relations.clear()
 
-        for strategy in self.discovery_strategies:
-            new_relations = strategy.discover(graph)
-            graph.relations.extend(new_relations)
+        # Transitive 依赖前面策略的结果，需要后执行
+        independent = [s for s in self.discovery_strategies
+                       if not isinstance(s, TransitiveDiscovery)]
+        dependent = [s for s in self.discovery_strategies
+                     if isinstance(s, TransitiveDiscovery)]
+
+        # 并行执行独立策略
+        with ThreadPoolExecutor(max_workers=len(independent) or 1) as pool:
+            futures = {
+                pool.submit(self._run_strategy, s, graph): s
+                for s in independent
+            }
+            for i, future in enumerate(as_completed(futures)):
+                rels = future.result()
+                graph.relations.extend(rels)
+                if self.progress_callback:
+                    self.progress_callback(
+                        "discovery", i + 1, len(self.discovery_strategies))
+
+        # 串行执行依赖策略（transitive）
+        for strategy in dependent:
+            rels = self._run_strategy(strategy, graph)
+            graph.relations.extend(rels)
+        if self.progress_callback:
+            self.progress_callback("discovery", len(self.discovery_strategies),
+                                   len(self.discovery_strategies))
 
         # Phase 3: 应用反馈
         self.logger.info("\n[反馈] 应用历史反馈...")
         feedback_count = self.feedback.apply_to_graph(graph)
         self.logger.info(f"  应用 {feedback_count} 条反馈")
 
-        # Phase 4: 去重
+        # Phase 4: 去重 + 最低置信度过滤
         graph.relations = self._deduplicate_relations(graph.relations)
+        graph.relations = [
+            r for r in graph.relations
+            if r.confidence >= self.config.min_relation_confidence
+        ]
         graph.updated_at = datetime.now()
 
         result.table_count = len(graph.tables)
@@ -181,14 +220,19 @@ class GraphBuilder:
         original_count = len(graph.relations)
 
         for strategy in self.discovery_strategies:
-            new_relations = strategy.discover(graph)
-            graph.relations.extend(new_relations)
+            rels = self._run_strategy(strategy, graph)
+            graph.relations.extend(rels)
 
         self.feedback.apply_to_graph(graph)
         graph.relations = self._deduplicate_relations(graph.relations)
+        graph.relations = [
+            r for r in graph.relations
+            if r.confidence >= self.config.min_relation_confidence
+        ]
 
         final_count = len(graph.relations)
-        self.logger.info(f"关系: {original_count} -> {final_count} (+{final_count - original_count})")
+        self.logger.info(
+            f"关系: {original_count} -> {final_count} (+{final_count - original_count})")
         return graph
 
     def save_feedback(self, confirmed=None, rejected=None):
@@ -202,7 +246,44 @@ class GraphBuilder:
     def close(self):
         self.feedback.stop()
 
+    def _run_strategy(self, strategy, graph):
+        """运行单个发现策略（带异常隔离）"""
+        try:
+            return strategy.discover(graph)
+        except Exception as e:
+            self.logger.error(
+                f"  策略 {strategy.__class__.__name__} 执行失败: {e}")
+            return []
+
+    # 业务域分类关键词（与 html_generator._get_group 保持一致）
+    _DOMAIN_RULES = [
+        ("hero",     ['hero', 'character', 'char_']),
+        ("skill",    ['skill', 'ability', 'spell', 'buff', 'talent']),
+        ("battle",   ['battle', 'fight', 'pvp', 'war', 'combat', 'army']),
+        ("item",     ['item', 'equip', 'prop',
+         'goods', 'material', 'resource']),
+        ("building", ['building', 'construct', 'castle', 'city']),
+        ("quest",    ['quest', 'task', 'mission', 'chapter', 'stage']),
+        ("alliance", ['alliance', 'guild', 'union', 'clan', 'legion']),
+        ("monster",  ['monster', 'enemy', 'npc', 'mob', 'boss', 'creature']),
+        ("reward",   ['reward', 'drop', 'loot', 'prize', 'chest', 'gift']),
+        ("world",    ['map', 'world', 'terrain', 'region', 'area', 'field']),
+        ("social",   ['mail', 'chat', 'message', 'notice', 'friend']),
+        ("config",   ['config', 'setting',
+         'param', 'const', 'global', 'system']),
+    ]
+
+    def _assign_domain_label(self, table: TableSchema):
+        """根据表名自动分配业务域标签"""
+        name_lower = table.name.lower()
+        for label, keywords in self._DOMAIN_RULES:
+            if any(kw in name_lower for kw in keywords):
+                table.domain_label = label
+                return
+        table.domain_label = "other"
+
     def _deduplicate_relations(self, relations):
+        # Step 1: 每对列只保留最高置信度
         seen = {}
         for rel in relations:
             key = tuple(sorted([
@@ -214,7 +295,20 @@ class GraphBuilder:
                     seen[key] = rel
             else:
                 seen[key] = rel
-        return list(seen.values())
+
+        # Step 2: 每对表之间只保留 top-N 关系（避免同类信号重复）
+        _MAX_PER_TABLE_PAIR = 3
+        from collections import defaultdict
+        pair_buckets = defaultdict(list)
+        for rel in seen.values():
+            pair_key = tuple(sorted([rel.from_table, rel.to_table]))
+            pair_buckets[pair_key].append(rel)
+
+        result = []
+        for rels in pair_buckets.values():
+            rels.sort(key=lambda r: r.confidence, reverse=True)
+            result.extend(rels[:_MAX_PER_TABLE_PAIR])
+        return result
 
 
 def create_builder(data_root="./data", **kwargs):

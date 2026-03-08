@@ -125,6 +125,71 @@ DOMAIN_KEYWORDS: Dict[str, List[str]] = {
 }
 
 
+# 中文实体关键词 → 英文表名前缀的种子词典（通用游戏术语）
+# 仅作为基础映射；实际使用时通过 build_cn_table_index() 结合真实表名动态构建
+_BASE_CN_ENTITY_MAP: Dict[str, List[str]] = {
+    '技能': ['skill', 'ability', 'talent', 'spell'],
+    '英雄': ['hero', 'character', 'champion', 'role'],
+    '物品': ['item', 'goods', 'product'],
+    '道具': ['item', 'prop'],
+    '装备': ['equip', 'equipment', 'gear'],
+    '活动': ['activity', 'event'],
+    '怪物': ['monster', 'enemy', 'mob', 'creature'],
+    '建筑': ['building', 'construct'],
+    '兵种': ['army', 'troop', 'soldier', 'unit'],
+    '科技': ['science', 'tech', 'technology', 'research'],
+    '武器': ['weapon', 'arm'],
+    '任务': ['quest', 'task', 'mission'],
+    '关卡': ['stage', 'instance', 'dungeon', 'level'],
+    '奖励': ['reward', 'prize', 'bonus'],
+    '商店': ['shop', 'store', 'mall'],
+    '公会': ['guild', 'alliance', 'clan'],
+    '联盟': ['alliance', 'league', 'union'],
+    '地图': ['map', 'world', 'scene'],
+    '角色': ['hero', 'character', 'role', 'avatar'],
+    '宝箱': ['chest', 'box', 'treasure'],
+    '资源': ['resource', 'res'],
+    '阵营': ['camp', 'faction', 'side'],
+    '特效': ['effect', 'vfx'],
+    'buff': ['buff'],
+    '天赋': ['talent', 'perk'],
+    '皮肤': ['skin', 'costume'],
+    '称号': ['title'],
+    '成就': ['achievement'],
+    '副本': ['instance', 'dungeon', 'raid'],
+    '战斗': ['battle', 'combat', 'fight'],
+    '赛季': ['season'],
+    '排行': ['rank', 'leaderboard'],
+    '邮件': ['mail', 'message'],
+    '聊天': ['chat'],
+    'vip': ['vip'],
+    '等级': ['level', 'grade'],
+    '星级': ['star'],
+    '品质': ['quality', 'rarity'],
+    '卡牌': ['card'],
+    '宠物': ['pet', 'familiar'],
+    '坐骑': ['mount', 'ride'],
+    '背包': ['bag', 'inventory', 'backpack'],
+    '签到': ['signin', 'checkin'],
+    '抽卡': ['gacha', 'draw', 'summon'],
+    '好友': ['friend', 'social'],
+    '战队': ['team', 'squad', 'party'],
+    '法术': ['spell', 'magic'],
+    '伙伴': ['partner', 'companion'],
+    '神器': ['artifact', 'relic'],
+    '符文': ['rune'],
+    '职业': ['class', 'profession', 'job', 'vocation'],
+    '种族': ['race', 'tribe', 'faction'],
+    '图鉴': ['collection', 'codex', 'handbook'],
+    '剧情': ['story', 'plot', 'scenario'],
+    '阵型': ['formation'],
+    '时装': ['fashion', 'costume', 'outfit'],
+    '礼包': ['package', 'bundle', 'gift'],
+    '通关': ['clear', 'pass'],
+    '竞技': ['arena', 'pvp', 'tournament'],
+}
+
+
 def lookup_abbreviation(abbrev: str) -> List[str]:
     """查询缩写对应的全称"""
     return GAME_ABBREVIATIONS.get(abbrev.lower(), [])
@@ -179,3 +244,89 @@ def expand_column_name(col_name: str) -> List[str]:
         results.append(clean)
 
     return results
+
+
+def build_cn_table_index(table_names: List[str]) -> Dict[str, List[str]]:
+    """
+    动态构建 中文关键词 → 实际表名 的映射索引。
+
+    策略:
+    1. 用 _BASE_CN_ENTITY_MAP 中的英文候选词，反向匹配实际存在的表名
+    2. 只保留在图谱中真实存在的表名，确保不会匹配到不存在的目标
+
+    Args:
+        table_names: 图谱中所有实际表名（如 ['hero', 'skill', 'item', ...]）
+
+    Returns:
+        {'技能': ['skill'], '英雄': ['hero'], ...}
+        只包含能匹配到实际表名的条目
+    """
+    table_lower_map = {n.lower(): n for n in table_names}
+    result: Dict[str, List[str]] = {}
+
+    for cn_key, en_candidates in _BASE_CN_ENTITY_MAP.items():
+        exact_matches = []
+        prefix_matches = []
+        for en in en_candidates:
+            en_lower = en.lower()
+            # 精确匹配（最高优先级）
+            if en_lower in table_lower_map:
+                exact_matches.append(table_lower_map[en_lower])
+                continue
+            # 前缀匹配（en 是某个表名的前缀，如 'skill' 匹配 'skill_level'）
+            # 但候选词需 >= 3 字符，且匹配的表名必须以 _ 或行尾衔接
+            if len(en_lower) >= 3:
+                for tname_lower, tname_real in table_lower_map.items():
+                    if (tname_lower.startswith(en_lower) and
+                            (len(tname_lower) == len(en_lower) or
+                             tname_lower[len(en_lower)] == '_')):
+                        if tname_real not in exact_matches and tname_real not in prefix_matches:
+                            prefix_matches.append(tname_real)
+        # 精确匹配优先，前缀匹配按表名长度排序（短表名更可能是基础实体表）
+        prefix_matches.sort(key=len)
+        combined = exact_matches + prefix_matches
+        if combined:
+            result[cn_key] = combined
+
+    return result
+
+
+def extract_cn_entity_tables(col_name: str,
+                             cn_table_index: Optional[Dict[str, List[str]]] = None
+                             ) -> List[str]:
+    """
+    从中文列名中提取引用的实际表名候选。
+
+    例: '英雄主动技能ID' → ['skill'] (如果图谱中有 skill 表)
+        '英雄专属雕像物品ID' → ['item']
+
+    Args:
+        col_name: 列名
+        cn_table_index: 由 build_cn_table_index() 动态构建的索引。
+                        如果为 None 则回退到 _BASE_CN_ENTITY_MAP（仅返回英文候选）。
+
+    策略: 从列名末尾向前查找最长匹配的中文实体关键词，
+    避免 "英雄主动技能ID" 同时返回 hero 和 skill — 优先取最靠近后缀的实体。
+    """
+    # 去掉常见后缀
+    name = col_name
+    for suffix in ('ID', 'Id', 'id', '编号', '编码', '序号', '索引'):
+        if name.endswith(suffix):
+            name = name[:-len(suffix)]
+            break
+
+    if not name:
+        return []
+
+    lookup = cn_table_index if cn_table_index is not None else _BASE_CN_ENTITY_MAP
+
+    # 从后向前扫描，找最靠近后缀的中文实体
+    best_pos = -1
+    best_tables: List[str] = []
+    for cn_key, table_list in lookup.items():
+        pos = name.rfind(cn_key)
+        if pos >= 0 and pos > best_pos:
+            best_pos = pos
+            best_tables = list(table_list)
+
+    return best_tables

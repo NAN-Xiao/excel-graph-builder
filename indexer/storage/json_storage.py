@@ -143,7 +143,7 @@ class JsonGraphStorage:
 
     @staticmethod
     def _table_to_dict(table: TableSchema) -> dict:
-        return {
+        d = {
             "name": table.name,
             "file_path": table.file_path,
             "sheet_name": table.sheet_name,
@@ -153,8 +153,11 @@ class JsonGraphStorage:
             "modified_time": table.modified_time,
             "hash": table.hash,
             "numeric_columns": table.numeric_columns,
-            "enum_columns": table.enum_columns
+            "enum_columns": table.enum_columns,
         }
+        if table.domain_label:
+            d["domain_label"] = table.domain_label
+        return d
 
     @staticmethod
     def _dict_to_table(data: dict) -> TableSchema:
@@ -168,19 +171,25 @@ class JsonGraphStorage:
             modified_time=data.get("modified_time", 0),
             hash=data.get("hash", ""),
             numeric_columns=data.get("numeric_columns", []),
-            enum_columns=data.get("enum_columns", {})
+            enum_columns=data.get("enum_columns", {}),
+            domain_label=data.get("domain_label", ""),
         )
 
     @staticmethod
     def _relation_to_dict(rel: RelationEdge) -> dict:
-        return {
+        d = {
             "from_table": rel.from_table,
             "from_column": rel.from_column,
             "to_table": rel.to_table,
             "to_column": rel.to_column,
             "relation_type": rel.relation_type,
-            "confidence": rel.confidence
+            "confidence": rel.confidence,
         }
+        if rel.discovery_method:
+            d["discovery_method"] = rel.discovery_method
+        if rel.evidence:
+            d["evidence"] = rel.evidence
+        return d
 
     @staticmethod
     def _dict_to_relation(data: dict) -> RelationEdge:
@@ -190,5 +199,7 @@ class JsonGraphStorage:
             to_table=data["to_table"],
             to_column=data["to_column"],
             relation_type=data["relation_type"],
-            confidence=data["confidence"]
+            confidence=data["confidence"],
+            discovery_method=data.get("discovery_method", ""),
+            evidence=data.get("evidence", ""),
         )

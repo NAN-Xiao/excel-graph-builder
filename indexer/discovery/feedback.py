@@ -105,16 +105,20 @@ class FeedbackManager:
         return 'unknown'
 
     def apply_to_graph(self, graph) -> int:
-        """应用反馈到图谱，返回应用数量"""
+        """应用反馈到图谱：确认的置信度置 1.0，拒绝的直接移除"""
         count = 0
+        kept = []
         for rel in graph.relations:
-            key = f"{rel.from_table}.{rel.from_column}->{rel.to_table}.{rel.to_column}"
-            if key in self.confirmed:
+            key_fwd = f"{rel.from_table}.{rel.from_column}->{rel.to_table}.{rel.to_column}"
+            key_rev = f"{rel.to_table}.{rel.to_column}->{rel.from_table}.{rel.from_column}"
+            if key_fwd in self.rejected or key_rev in self.rejected:
+                count += 1
+                continue  # 真正移除
+            if key_fwd in self.confirmed or key_rev in self.confirmed:
                 rel.confidence = 1.0
                 count += 1
-            elif key in self.rejected:
-                rel.confidence = 0.1
-                count += 1
+            kept.append(rel)
+        graph.relations = kept
         return count
 
     def force_save(self):

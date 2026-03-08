@@ -10,12 +10,36 @@ Excel 文件读取器
 """
 
 import os
+import re
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 
 import pandas as pd
 
 from indexer import SimpleLogger
+
+# 游戏配置 Excel 常见的类型标记行关键词（精确匹配 + 复合类型基底）
+_TYPE_KEYWORDS = frozenset({
+    'int', 'float', 'string', 'str', 'bool', 'boolean',
+    'int[]', 'float[]', 'string[]', 'int32', 'int64',
+    'uint32', 'uint64', 'int16', 'uint16', 'int8', 'uint8',
+    'json', 'long', 'double', 'short', 'byte', 'uint',
+    'text', 'enum', 'array', 'list', 'map', 'dict',
+    'vector2', 'vector3', 'color',
+    'date', 'time', 'datetime', 'number', 'object',
+})
+
+# 用于拆分复合类型的分隔符，如 list<int> → list, int[][] → int
+_TYPE_COMPOUND_RE = re.compile(r'[\[<(]')
+
+
+def _is_type_value(v: str) -> bool:
+    """判断单个值是否像类型标注（支持复合类型如 list<int>, int[][], map<k,v>）"""
+    if v in _TYPE_KEYWORDS:
+        return True
+    # 取基础类型名称: list<int> → list, int[][] → int, map<string,int> → map
+    base = _TYPE_COMPOUND_RE.split(v, maxsplit=1)[0]
+    return base in _TYPE_KEYWORDS
 
 
 class ExcelReader:
@@ -56,6 +80,73 @@ class ExcelReader:
         except Exception as e:
             self.logger.error(f"读取文件失败 {file_path.name}: {e}")
             return []
+
+    def skip_header_rows(self, df: pd.DataFrame) -> pd.DataFrame:
+        """检测并跳过游戏配置 Excel 的元数据表头行，返回干净的 DataFrame。"""
+        skip = self._detect_header_rows(df)
+        if skip > 0:
+            df = df.iloc[skip:].reset_index(drop=True)
+        return df
+
+    def _detect_header_rows(self, df: pd.DataFrame) -> int:
+        """
+        检测游戏配置 Excel 的元数据表头行数。
+
+        常见模式（不同游戏项目格式可能不同）:
+          A: [pandas_header=CN, ident_row, type_row, data...]
+          B: [pandas_header=EN, type_row, data...]
+          C: [pandas_header=CN, ident_row, desc_row, type_row, data...]
+          D: [pandas_header=CN, tag_row(c/s/cs), ident_row, type_row, data...]
+
+        策略: 逐行检测，支持类型行、标识符行、描述/注释行（需先检测到元数据）。
+        允许在已确认的元数据行之间存在纯文本描述行（间隔容忍）。
+
+        Returns:
+            应跳过的行数（0 表示无需跳过）
+        """
+        skip = 0
+        check_rows = min(5, len(df))
+
+        for i in range(check_rows):
+            row = df.iloc[i]
+            non_null = [str(v).strip().lower()
+                        for v in row if pd.notna(v) and str(v).strip()]
+            if not non_null:
+                if skip > 0:
+                    skip = i + 1  # 元数据之间的空行一并跳过
+                continue
+
+            total = len(non_null)
+
+            # 判定1: 类型标记行（>70% 是类型关键词，支持 list<int> 等复合类型）
+            type_hits = sum(1 for v in non_null if _is_type_value(v))
+            if type_hits / total > 0.7:
+                skip = i + 1
+                continue
+
+            # 判定2: 英文标识符行（>80% 是 camelCase/snake_case 标识符）
+            ident_hits = sum(
+                1 for v in non_null
+                if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', v) and len(v) >= 2
+            )
+            if ident_hits / total > 0.8:
+                skip = i + 1
+                continue
+
+            # 判定3: 描述/注释行 — 仅在已检测到至少一行元数据时启用
+            # 纯文本行（几乎无数字）夹在元数据行之间，通常是中文字段说明
+            if skip > 0:
+                numeric_hits = sum(
+                    1 for v in non_null if re.match(r'^-?\d+\.?\d*$', v)
+                )
+                if numeric_hits / total < 0.1:
+                    skip = i + 1
+                    continue
+
+            # 当前行既不是元数据也不是描述行 — 停止检查
+            break
+
+        return skip
 
     def _read_csv(self, file_path: Path) -> List[Dict]:
         """读取 CSV 文件"""
@@ -102,19 +193,15 @@ class ExcelReader:
             if any(sn.startswith(p) for p in ('#',)):
                 continue
             try:
-                df = xls.parse(sn)
+                # P4: 只读取前 max_rows 行，避免全量加载万行大表
+                max_rows = self.max_sample_rows * 25  # 默认 50000
+                df = xls.parse(sn, nrows=max_rows)
                 if df.empty or len(df.columns) == 0:
                     continue
 
                 # 跳过看起来不是数据表的 sheet（列数 < 2 或行数 < 1）
                 if len(df.columns) < 2 or len(df) < 1:
                     continue
-
-                # 超大表截断：保留前 max_rows 行
-                if len(df) > self.max_sample_rows * 250:
-                    self.logger.warning(
-                        f"  {sn}: {len(df)} 行过大，截断为 {self.max_sample_rows * 250} 行")
-                    df = df.head(self.max_sample_rows * 250)
 
                 results.append({
                     'sheet_name': sn,

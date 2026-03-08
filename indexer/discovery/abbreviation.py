@@ -6,10 +6,12 @@ Phase 2: 缩写模式挖掘
 从已确认关系中学习缩写映射，如 sid -> skill
 """
 
+import re
 from typing import List, Optional, Dict
 from indexer.models import SchemaGraph, RelationEdge
 
-from .base import RelationDiscoveryStrategy
+from .base import RelationDiscoveryStrategy, build_relation_key
+from .value_utils import normalize_value_set
 
 
 class AbbreviationDiscovery(RelationDiscoveryStrategy):
@@ -28,6 +30,9 @@ class AbbreviationDiscovery(RelationDiscoveryStrategy):
         if not self.patterns:
             return []
 
+        # O(1) 关系查重
+        rel_index = self._build_relation_index(graph)
+
         # 应用缩写发现新关系
         new_relations = []
         all_tables = list(graph.tables.keys())
@@ -43,9 +48,15 @@ class AbbreviationDiscovery(RelationDiscoveryStrategy):
                     if target_table in all_tables and target_table != table_name:
                         target_pk = graph.tables[target_table].primary_key
                         if target_pk:
+                            key = build_relation_key(
+                                table_name, col['name'],
+                                target_table, target_pk)
+                            if key in rel_index:
+                                continue
                             # 验证内容匹配
                             if self._verify_match(table, col['name'],
                                                   graph.tables[target_table], target_pk):
+                                rel_index.add(key)
                                 new_relations.append(RelationEdge(
                                     from_table=table_name,
                                     from_column=col['name'],
@@ -53,7 +64,9 @@ class AbbreviationDiscovery(RelationDiscoveryStrategy):
                                     to_column=target_pk,
                                     relation_type='fk_abbreviation',
                                     confidence=round(
-                                        pattern['confidence'] * 0.8, 2)
+                                        pattern['confidence'] * 0.8, 2),
+                                    discovery_method='abbreviation',
+                                    evidence=f"abbrev '{clean_col}' -> '{target_table}'",
                                 ))
 
         self.logger.info(f"[Phase 2] 通过缩写发现 {len(new_relations)} 个新关系")
@@ -135,8 +148,10 @@ class AbbreviationDiscovery(RelationDiscoveryStrategy):
         if not from_col_data or not to_col_data:
             return False
 
-        from_values = set(from_col_data.get('sample_values', []))
-        to_values = set(to_col_data.get('sample_values', []))
+        from_values = normalize_value_set(
+            from_col_data.get('sample_values', []))
+        to_values = normalize_value_set(
+            to_col_data.get('sample_values', []))
 
         if not from_values or not to_values:
             return False
@@ -145,4 +160,4 @@ class AbbreviationDiscovery(RelationDiscoveryStrategy):
         containment = len(intersection) / \
             len(from_values) if from_values else 0
 
-        return containment >= 0.5
+        return containment >= 0.3

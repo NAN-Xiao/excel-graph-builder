@@ -16,52 +16,57 @@ from .base import RelationDiscoveryStrategy
 class TransitiveDiscovery(RelationDiscoveryStrategy):
     """传递关系推断策略"""
 
+    # 只从高置信度关系构建推断路径
+    _MIN_SOURCE_CONFIDENCE = 0.65
+    # 传递关系上限（按置信度排序取 top-N）
+    _MAX_TRANSITIVE = 500
+
     def discover(self, graph: SchemaGraph) -> List[RelationEdge]:
-        """推断传递关系"""
-        # 构建邻接表
+        """推断传递关系（仅基于高置信度直接关系）"""
+        # O(1) 直接关系查重
+        direct_pairs: Set[tuple] = set()
+        for rel in graph.relations:
+            direct_pairs.add((rel.from_table, rel.to_table))
+            direct_pairs.add((rel.to_table, rel.from_table))
+
+        # 只从高置信度关系构建邻接表
         adj = defaultdict(list)
         for rel in graph.relations:
-            adj[rel.from_table].append((rel.to_table, rel))
+            if rel.confidence >= self._MIN_SOURCE_CONFIDENCE:
+                adj[rel.from_table].append((rel.to_table, rel))
 
         inferred = []
-        seen = set()
+        seen: Set[tuple] = set()
 
-        # 找长度为2的路径 A->B->C
         for a in list(adj.keys()):
             for b, rel_ab in adj[a]:
                 if b not in adj:
                     continue
                 for c, rel_bc in adj[b]:
-                    if a == c:
+                    if a == c or (a, c) in direct_pairs:
                         continue
-
-                    # 检查是否已有直接关系
-                    if self._has_direct_relation(graph, a, c):
-                        continue
-
-                    # 避免重复
                     key = (a, c)
                     if key in seen:
                         continue
                     seen.add(key)
 
+                    conf = round(
+                        rel_ab.confidence * rel_bc.confidence * 0.5, 2)
                     inferred.append(RelationEdge(
                         from_table=a,
-                        from_column=f"via_{b}",
+                        from_column=rel_ab.from_column,
                         to_table=c,
                         to_column=rel_bc.to_column,
                         relation_type='inferred_transitive',
-                        confidence=round(rel_ab.confidence *
-                                         rel_bc.confidence * 0.5, 2)
+                        confidence=conf,
+                        discovery_method='transitive',
+                        evidence=f"{a}.{rel_ab.from_column}->{b}.{rel_ab.to_column}->{c}.{rel_bc.to_column}",
                     ))
+
+        # 只保留 top-N
+        if len(inferred) > self._MAX_TRANSITIVE:
+            inferred.sort(key=lambda r: r.confidence, reverse=True)
+            inferred = inferred[:self._MAX_TRANSITIVE]
 
         self.logger.info(f"[Phase 3] 推断 {len(inferred)} 个传递关系")
         return inferred
-
-    def _has_direct_relation(self, graph: SchemaGraph, table_a: str, table_b: str) -> bool:
-        """检查两表是否已有直接关系"""
-        for rel in graph.relations:
-            if ((rel.from_table == table_a and rel.to_table == table_b) or
-                    (rel.from_table == table_b and rel.to_table == table_a)):
-                return True
-        return False
