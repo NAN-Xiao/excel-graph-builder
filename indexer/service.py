@@ -91,6 +91,10 @@ class IndexService:
                 self._pending_deletions.clear()
 
                 self.logger.success(f"构建完成 | {result.summary()}")
+
+                # 自动导出 LLM 资产
+                self._export_llm_assets()
+
                 return True
             else:
                 self.logger.error("保存图谱失败")
@@ -101,6 +105,33 @@ class IndexService:
             import traceback
             traceback.print_exc()
             return False
+
+    def _export_llm_assets(self):
+        """构建完成后自动导出 LLM/RAG 所需资产"""
+        if not self.current_graph:
+            return
+        try:
+            from indexer.export import export_llm_chunks, export_schema_summary
+            storage_dir = Path(self.storage.data_dir)
+
+            # 1. schema_summary.txt — 轻量表名摘要，~500 tokens，用于 RAG 意图提取
+            summary_path = storage_dir / "schema_summary.txt"
+            export_schema_summary(self.current_graph, str(summary_path))
+
+            # 2. llm_chunks.jsonl — 每表一行 JSON，用于向量化召回
+            jsonl_path = storage_dir / "llm_chunks.jsonl"
+            export_llm_chunks(self.current_graph, str(jsonl_path))
+
+            # 3. llm_chunks.md — Markdown 格式，便于人工检查
+            md_path = storage_dir / "llm_chunks.md"
+            export_llm_chunks(self.current_graph, str(md_path))
+
+            self.logger.success(
+                f"LLM 资产已导出 → {summary_path.name}, "
+                f"{jsonl_path.name}, {md_path.name}"
+            )
+        except Exception as e:
+            self.logger.error(f"LLM 资产导出失败: {e}")
 
     def _do_incremental_build(self):
         """执行真正的增量构建（由延迟任务调用）"""
