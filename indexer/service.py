@@ -6,33 +6,20 @@ Index Service - 索引构建服务入口
 完全独立进程，不依赖主应用的 core 模块
 """
 
-import os
 import sys
 import argparse
 import signal
 import time
-import json
 import threading
 from pathlib import Path
 from typing import Optional, Set
 
-# Indexer 自己的模块
-try:
-    # 新结构
-    from indexer.storage import JsonGraphStorage
-    from indexer.scheduler import BuildScheduler
-    from indexer.watcher import FileWatcher
-    from indexer.core.builder import GraphBuilder
-    from indexer.schema_graph import SchemaGraph
-    from indexer import SimpleLogger
-except ImportError:
-    # 根目录结构
-    from storage import JsonGraphStorage
-    from scheduler import BuildScheduler
-    from watcher import FileWatcher
-    from core.builder import GraphBuilder
-    from schema_graph import SchemaGraph
-    from __init__ import SimpleLogger
+from indexer.storage import JsonGraphStorage
+from indexer.scheduler import BuildScheduler
+from indexer.watcher import FileWatcher
+from indexer.core.builder import GraphBuilder
+from indexer.models import SchemaGraph
+from indexer import SimpleLogger
 
 
 class IndexService:
@@ -47,7 +34,7 @@ class IndexService:
         self.scheduler = BuildScheduler()
         self.watcher: Optional[FileWatcher] = None
         # 使用新的 GraphBuilder
-        from core.config import BuildConfig
+        from indexer.core.config import BuildConfig
         config = BuildConfig(
             data_root=str(self.data_root),
             html_dir=html_dir,

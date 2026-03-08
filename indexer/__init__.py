@@ -18,17 +18,21 @@ __version__ = "1.0.0"
 class SimpleLogger:
     """简单日志实现（独立使用）"""
     @staticmethod
-    def info(msg): 
+    def info(msg):
         print(f"[INFO] {msg}")
+
     @staticmethod
-    def success(msg): 
+    def success(msg):
         print(f"[OK] {msg}")
+
     @staticmethod
-    def warning(msg): 
+    def warning(msg):
         print(f"[WARN] {msg}")
+
     @staticmethod
-    def error(msg): 
+    def error(msg):
         print(f"[ERR] {msg}")
+
     @staticmethod
-    def debug(msg): 
+    def debug(msg):
         pass

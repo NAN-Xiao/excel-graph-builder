@@ -11,10 +11,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict
 
-try:
-    from indexer.schema_graph import SchemaGraph, TableSchema, RelationEdge
-except ImportError:
-    from schema_graph import SchemaGraph, TableSchema, RelationEdge
+from indexer.models import SchemaGraph, TableSchema, RelationEdge
 
 # 跨平台文件锁
 try:
@@ -26,17 +23,17 @@ except ImportError:
 
 class JsonGraphStorage:
     """JSON 文件存储图谱数据"""
-    
+
     def __init__(self, data_dir: str = "./data/indexer"):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        
+
         self.graph_file = self.data_dir / "schema_graph.json"
         self.index_file = self.data_dir / "column_index.json"
         self.meta_file = self.data_dir / "meta.json"
-        
+
         print(f"[INFO] 存储目录: {self.data_dir}")
-    
+
     def save(self, graph: SchemaGraph) -> bool:
         """保存图谱到 JSON"""
         try:
@@ -55,7 +52,7 @@ class JsonGraphStorage:
                 ]
             }
             self._atomic_write(self.graph_file, graph_data)
-            
+
             # 2. 保存列索引
             index_data = {
                 "column_to_tables": {
@@ -65,7 +62,7 @@ class JsonGraphStorage:
                 "updated_at": datetime.now().isoformat()
             }
             self._atomic_write(self.index_file, index_data)
-            
+
             # 3. 保存元信息
             meta_data = {
                 "table_count": len(graph.tables),
@@ -74,40 +71,41 @@ class JsonGraphStorage:
                 "data_dir": str(self.data_dir)
             }
             self._atomic_write(self.meta_file, meta_data)
-            
-            print(f"[OK] 图谱已保存: {len(graph.tables)} 表, {len(graph.relations)} 关系")
+
+            print(
+                f"[OK] 图谱已保存: {len(graph.tables)} 表, {len(graph.relations)} 关系")
             return True
-            
+
         except Exception as e:
             print(f"[ERR] 保存失败: {e}")
             return False
-    
+
     def load(self) -> Optional[SchemaGraph]:
         """从 JSON 加载图谱"""
         if not self.graph_file.exists():
             print("[INFO] 没有找到现有图谱文件")
             return None
-        
+
         try:
             with open(self.graph_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            
+
             graph = SchemaGraph(
                 version=data.get("version", "1.0"),
                 created_at=datetime.fromisoformat(data["created_at"]),
                 updated_at=datetime.fromisoformat(data["updated_at"])
             )
-            
+
             # 加载表
             for name, table_data in data.get("tables", {}).items():
                 table = self._dict_to_table(table_data)
                 graph.tables[name] = table
-            
+
             # 加载关系
             for rel_data in data.get("relations", []):
                 rel = self._dict_to_relation(rel_data)
                 graph.relations.append(rel)
-            
+
             # 重建列索引
             if self.index_file.exists():
                 with open(self.index_file, 'r', encoding='utf-8') as f:
@@ -116,33 +114,33 @@ class JsonGraphStorage:
                     graph._column_index[col] = set(tables)
             else:
                 graph._rebuild_index()
-            
+
             print(f"[OK] 图谱已加载: {len(graph.tables)} 表")
             return graph
-            
+
         except Exception as e:
             print(f"[ERR] 加载失败: {e}")
             import traceback
             traceback.print_exc()
             return None
-    
+
     def _atomic_write(self, filepath: Path, data: dict):
         """原子写入（跨平台）"""
         temp_file = filepath.with_suffix('.tmp')
-        
+
         with open(temp_file, 'w', encoding='utf-8') as f:
             # 文件锁（Linux/Mac）
             if HAS_FCNTL:
                 fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-            
+
             json.dump(data, f, ensure_ascii=False, indent=2, default=str)
-            
+
             if HAS_FCNTL:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-        
+
         # 原子重命名（Windows 和 Unix 都支持）
         temp_file.replace(filepath)
-    
+
     @staticmethod
     def _table_to_dict(table: TableSchema) -> dict:
         return {
@@ -157,7 +155,7 @@ class JsonGraphStorage:
             "numeric_columns": table.numeric_columns,
             "enum_columns": table.enum_columns
         }
-    
+
     @staticmethod
     def _dict_to_table(data: dict) -> TableSchema:
         return TableSchema(
@@ -172,7 +170,7 @@ class JsonGraphStorage:
             numeric_columns=data.get("numeric_columns", []),
             enum_columns=data.get("enum_columns", {})
         )
-    
+
     @staticmethod
     def _relation_to_dict(rel: RelationEdge) -> dict:
         return {
@@ -183,7 +181,7 @@ class JsonGraphStorage:
             "relation_type": rel.relation_type,
             "confidence": rel.confidence
         }
-    
+
     @staticmethod
     def _dict_to_relation(data: dict) -> RelationEdge:
         return RelationEdge(

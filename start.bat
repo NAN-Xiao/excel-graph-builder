@@ -18,6 +18,17 @@ set "LOG_DIR=%PROJECT_ROOT%\logs"
 if not exist "%STORAGE_DIR%" mkdir "%STORAGE_DIR%"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 
+:: 激活虚拟环境
+set "VENV_DIR=%SCRIPT_DIR%.venv"
+if exist "%VENV_DIR%\Scripts\activate.bat" (
+    call "%VENV_DIR%\Scripts\activate.bat"
+    echo 虚拟环境已激活: %VENV_DIR%
+) else (
+    echo [错误] 未找到虚拟环境 .venv，请先运行: python -m venv .venv
+    pause
+    exit /b 1
+)
+
 :: 检查 Python
 python --version >nul 2>&1
 if errorlevel 1 (
@@ -31,12 +42,12 @@ echo 存储目录: %STORAGE_DIR%
 echo 日志目录: %LOG_DIR%
 echo.
 
-:: 启动服务
+:: 启动服务（python -m indexer 调用 indexer/__main__.py）
 echo 正在启动 Indexer 服务...
 echo 按 Ctrl+C 停止服务
 echo.
 
-python -m indexer.main ^
+python -m indexer ^
     --data-root "%DATA_ROOT%" ^
     --storage-dir "%STORAGE_DIR%" ^
     --daemon ^

@@ -11,15 +11,12 @@ import json
 import threading
 from typing import Set, Dict
 from datetime import datetime
-try:
-    from indexer import SimpleLogger
-except ImportError:
-    from __init__ import SimpleLogger
+from indexer import SimpleLogger
 
 
 class FeedbackManager:
     """反馈管理器（内存缓存 + 定时持久化）"""
-    
+
     def __init__(self, feedback_file: str = "relation_feedback.json",
                  auto_save_interval: int = 60):
         self.feedback_file = feedback_file
@@ -28,24 +25,24 @@ class FeedbackManager:
         self._modified = False
         self._lock = threading.Lock()
         self.logger = SimpleLogger()
-        
+
         # 加载现有反馈
         self._load()
-        
+
         # 启动定时保存线程
         self._stop_event = threading.Event()
         self._save_thread = threading.Thread(
-            target=self._auto_save, 
-            args=(auto_save_interval,), 
+            target=self._auto_save,
+            args=(auto_save_interval,),
             daemon=True
         )
         self._save_thread.start()
-    
+
     def _load(self):
         """加载反馈"""
         if not os.path.exists(self.feedback_file):
             return
-        
+
         try:
             with open(self.feedback_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -53,22 +50,23 @@ class FeedbackManager:
                 self.confirmed.add(item['relation_key'])
             for item in data.get('rejected', []):
                 self.rejected.add(item['relation_key'])
-            self.logger.info(f"[Feedback] 加载 {len(self.confirmed)} 确认, {len(self.rejected)} 拒绝")
+            self.logger.info(
+                f"[Feedback] 加载 {len(self.confirmed)} 确认, {len(self.rejected)} 拒绝")
         except Exception as e:
             self.logger.error(f"[Feedback] 加载失败: {e}")
-    
+
     def _auto_save(self, interval: int):
         """定时保存线程"""
         while not self._stop_event.wait(interval):
             if self._modified:
                 self._save()
-    
+
     def _save(self):
         """保存到文件"""
         with self._lock:
             if not self._modified:
                 return
-            
+
             try:
                 data = {
                     'confirmed': [{'relation_key': k} for k in self.confirmed],
@@ -80,7 +78,7 @@ class FeedbackManager:
                 self._modified = False
             except Exception as e:
                 self.logger.error(f"[Feedback] 保存失败: {e}")
-    
+
     def confirm(self, from_table: str, from_col: str, to_table: str, to_col: str):
         """确认关系正确"""
         key = f"{from_table}.{from_col}->{to_table}.{to_col}"
@@ -88,7 +86,7 @@ class FeedbackManager:
             self.confirmed.add(key)
             self.rejected.discard(key)
             self._modified = True
-    
+
     def reject(self, from_table: str, from_col: str, to_table: str, to_col: str):
         """标记关系错误"""
         key = f"{from_table}.{from_col}->{to_table}.{to_col}"
@@ -96,7 +94,7 @@ class FeedbackManager:
             self.rejected.add(key)
             self.confirmed.discard(key)
             self._modified = True
-    
+
     def check(self, from_table: str, from_col: str, to_table: str, to_col: str) -> str:
         """检查状态: 'confirmed' | 'rejected' | 'unknown'"""
         key = f"{from_table}.{from_col}->{to_table}.{to_col}"
@@ -105,7 +103,7 @@ class FeedbackManager:
         if key in self.rejected:
             return 'rejected'
         return 'unknown'
-    
+
     def apply_to_graph(self, graph) -> int:
         """应用反馈到图谱，返回应用数量"""
         count = 0
@@ -118,11 +116,11 @@ class FeedbackManager:
                 rel.confidence = 0.1
                 count += 1
         return count
-    
+
     def force_save(self):
         """强制立即保存"""
         self._save()
-    
+
     def stop(self):
         """停止并保存"""
         self._stop_event.set()

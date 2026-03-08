@@ -15,29 +15,31 @@ class BuildConfig:
     data_root: str = "./data"
     storage_dir: str = "./data/indexer"
     html_dir: str = "./html"
-    
+
     # 性能配置
     max_workers: int = 4
-    max_sample_rows: int = 50
-    max_sample_cols: int = 50
-    
+    max_sample_rows: int = 200
+    max_sample_cols: int = 200
+    max_rows_per_table: int = 50000  # 超过此行数的表截断采样
+    skip_sheet_prefixes: tuple = ('#',)  # 跳过这些前缀的 sheet（备注/备份）
+
     # Phase 1: 包含度检测
-    containment_threshold: float = 0.85
+    containment_threshold: float = 0.92
     overlap_threshold: float = 0.8
     min_sample_size: int = 3
-    
+
     # Phase 2: 缩写挖掘
     abbrev_confidence_threshold: float = 0.8
-    
+
     # 缓存配置
     enable_perf_opt: bool = True
     fingerprint_cache_file: str = "./data/fingerprints.json"
     feedback_file: str = "relation_feedback.json"
     auto_save_interval: int = 60
-    
+
     # HTML 报告
     offline_html: bool = True
-    
+
     # 调度配置
     incremental_delay: float = 3.0
 
