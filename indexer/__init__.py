@@ -12,27 +12,64 @@ Indexer - 配置表索引构建服务
 主服务通过读取 JSON 文件使用图谱数据
 """
 
+import logging
+import os
+from pathlib import Path
+
 __version__ = "1.0.0"
 
 
+def _setup_logger() -> logging.Logger:
+    """初始化结构化日志：控制台 + 文件双输出"""
+    logger = logging.getLogger("indexer")
+    if logger.handlers:
+        return logger
+    logger.setLevel(logging.DEBUG)
+
+    fmt = logging.Formatter(
+        "%(asctime)s [%(levelname)-5s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # 控制台
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    ch.setFormatter(fmt)
+    logger.addHandler(ch)
+
+    # 文件（自动创建目录）
+    log_dir = Path(os.environ.get("INDEXER_LOG_DIR", "./data/indexer"))
+    log_dir.mkdir(parents=True, exist_ok=True)
+    fh = logging.FileHandler(log_dir / "indexer.log", encoding="utf-8")
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(fmt)
+    logger.addHandler(fh)
+
+    return logger
+
+
+_logger = _setup_logger()
+
+
 class SimpleLogger:
-    """简单日志实现（独立使用）"""
+    """结构化日志（控制台 + 文件持久化）"""
+
     @staticmethod
     def info(msg):
-        print(f"[INFO] {msg}")
+        _logger.info(msg)
 
     @staticmethod
     def success(msg):
-        print(f"[OK] {msg}")
+        _logger.info(f"[OK] {msg}")
 
     @staticmethod
     def warning(msg):
-        print(f"[WARN] {msg}")
+        _logger.warning(msg)
 
     @staticmethod
     def error(msg):
-        print(f"[ERR] {msg}")
+        _logger.error(msg)
 
     @staticmethod
     def debug(msg):
-        pass
+        _logger.debug(msg)

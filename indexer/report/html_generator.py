@@ -42,7 +42,8 @@ class HTMLReportGenerator:
                 continue
             try:
                 self.logger.info(f"正在下载 {fname}...")
-                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                req = urllib.request.Request(
+                    url, headers={'User-Agent': 'Mozilla/5.0'})
                 with urllib.request.urlopen(req, timeout=30) as response:
                     content = response.read().decode('utf-8')
                 with open(fpath, 'w', encoding='utf-8') as f:
@@ -69,7 +70,7 @@ class HTMLReportGenerator:
             col_count = len(table.columns)
             row_count = table.row_count
             deg = degree.get(name, 0)
-            size = max(3, min(20, (row_count / 300) + (deg / 8)))
+            size = max(2, min(8, 2 + (deg / 10)))
 
             title = f"表: {name}\\n列数: {col_count}\\n行数: {row_count}"
             if table.primary_key:
@@ -113,7 +114,8 @@ class HTMLReportGenerator:
                 'numeric_columns': table.numeric_columns
             }
 
-        html_content = self._build_html(nodes_data, edges_data, stats, tables_meta)
+        html_content = self._build_html(
+            nodes_data, edges_data, stats, tables_meta)
 
         output_file = self.output_dir / "schema_graph.html"
         with open(output_file, 'w', encoding='utf-8') as f:
@@ -128,15 +130,19 @@ class HTMLReportGenerator:
             ("hero",     ['hero', 'character', 'char_']),
             ("skill",    ['skill', 'ability', 'spell', 'buff', 'talent']),
             ("battle",   ['battle', 'fight', 'pvp', 'war', 'combat', 'army']),
-            ("item",     ['item', 'equip', 'prop', 'goods', 'material', 'resource']),
+            ("item",     ['item', 'equip', 'prop',
+             'goods', 'material', 'resource']),
             ("building", ['building', 'construct', 'castle', 'city']),
             ("quest",    ['quest', 'task', 'mission', 'chapter', 'stage']),
             ("alliance", ['alliance', 'guild', 'union', 'clan', 'legion']),
-            ("monster",  ['monster', 'enemy', 'npc', 'mob', 'boss', 'creature']),
+            ("monster",  ['monster', 'enemy',
+             'npc', 'mob', 'boss', 'creature']),
             ("reward",   ['reward', 'drop', 'loot', 'prize', 'chest', 'gift']),
-            ("world",    ['map', 'world', 'terrain', 'region', 'area', 'field']),
+            ("world",    ['map', 'world',
+             'terrain', 'region', 'area', 'field']),
             ("social",   ['mail', 'chat', 'message', 'notice', 'friend']),
-            ("config",   ['config', 'setting', 'param', 'const', 'global', 'system']),
+            ("config",   ['config', 'setting',
+             'param', 'const', 'global', 'system']),
         ]:
             if any(kw in name for kw in keywords):
                 return group
@@ -162,11 +168,14 @@ class HTMLReportGenerator:
 
         extra_parts = []
         if stats.get('added', -1) >= 0:
-            extra_parts.append(f'<span>新增 <strong>{stats["added"]}</strong></span>')
+            extra_parts.append(
+                f'<span>新增 <strong>{stats["added"]}</strong></span>')
         if stats.get('updated', -1) >= 0:
-            extra_parts.append(f'<span>更新 <strong>{stats["updated"]}</strong></span>')
+            extra_parts.append(
+                f'<span>更新 <strong>{stats["updated"]}</strong></span>')
         if stats.get('deleted', -1) >= 0:
-            extra_parts.append(f'<span>删除 <strong>{stats["deleted"]}</strong></span>')
+            extra_parts.append(
+                f'<span>删除 <strong>{stats["deleted"]}</strong></span>')
         extra_stats = ' '.join(extra_parts)
 
         return f'''<!DOCTYPE html>
@@ -254,6 +263,11 @@ body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 #detail-content table{{width:100%;font-size:11px;border-collapse:collapse;margin-bottom:10px}}
 #detail-content th{{text-align:left;padding:4px 6px;background:#1e293b;color:#94a3b8;font-weight:500}}
 #detail-content td{{padding:4px 6px;border-bottom:1px solid #1e293b;color:#cbd5e1}}
+.cam-bar{{position:absolute;top:10px;right:382px;z-index:200;display:flex;gap:4px;align-items:center;pointer-events:auto}}
+.cam-btn{{width:32px;height:28px;border:1px solid #334155;border-radius:4px;background:rgba(17,24,39,0.85);color:#94a3b8;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;backdrop-filter:blur(6px)}}
+.cam-btn:hover{{background:#1e293b;color:#e2e8f0;border-color:#818cf8}}
+.cam-btn.active{{background:#4f46e5;color:#fff;border-color:#4f46e5}}
+.cam-sep{{width:1px;height:20px;background:#334155;margin:0 2px}}
 </style>
 </head>
 <body>
@@ -273,6 +287,15 @@ body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
         <div id="fps-hud">-- FPS</div>
         <div id="edge-hud"></div>
         <div class="loading" id="loading-msg">加载中...</div>
+    </div>
+    <div class="cam-bar">
+        <button class="cam-btn" onclick="setCamView('top')" title="俯视">T</button>
+        <button class="cam-btn" onclick="setCamView('front')" title="正前">F</button>
+        <button class="cam-btn" onclick="setCamView('back')" title="背面">B</button>
+        <button class="cam-btn" onclick="setCamView('left')" title="左侧">L</button>
+        <button class="cam-btn" onclick="setCamView('right')" title="右侧">R</button>
+        <div class="cam-sep"></div>
+        <button class="cam-btn" id="persp-btn" onclick="togglePersp()" title="透视/正交">P</button>
     </div>
     <div class="sidebar">
         <div class="tab-bar">
@@ -294,6 +317,15 @@ body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
             <div class="lgd"><i style="background:#fd79a8"></i>社交</div>
             <div class="lgd"><i style="background:#636e72"></i>配置/系统</div>
             <div class="lgd"><i style="background:#b2bec3"></i>其他</div>
+            <div style="margin-top:12px;padding-top:10px;border-top:1px solid #1e293b">
+                <div style="font-size:11px;color:#64748b;margin-bottom:6px;font-weight:500">连线颜色 — 关系类型</div>
+                <div class="lgd"><i style="background:rgb(96,165,250)"></i>命名约定</div>
+                <div class="lgd"><i style="background:rgb(74,222,128)"></i>值包含</div>
+                <div class="lgd"><i style="background:rgb(251,191,36)"></i>值重叠</div>
+                <div class="lgd"><i style="background:rgb(251,146,36)"></i>缩写匹配</div>
+                <div class="lgd"><i style="background:rgb(167,139,250)"></i>传递推断</div>
+                <div class="lgd"><i style="background:rgb(148,163,184)"></i>其他</div>
+            </div>
             <div class="ctrl">
                 <h3>控制</h3>
                 <button class="btn" onclick="resetCamera()">适应窗口</button>
@@ -362,8 +394,9 @@ const groupColors = {{
 }};
 // 关系类型颜色 (RGB for rgba)
 const relRgb = {{
-    naming_convention:'96,165,250', content_subset:'74,222,128',
-    abbreviation_pattern:'251,191,36', transitive:'167,139,250'
+    fk_naming_convention:'96,165,250', fk_content_subset:'74,222,128',
+    fk_content_overlap:'251,191,36', inferred_transitive:'167,139,250',
+    fk_abbreviation_pattern:'251,146,36'
 }};
 const defRelRgb = '148,163,184';
 
@@ -371,6 +404,7 @@ const defRelRgb = '148,163,184';
 let G = null;
 let linksOn = true, dagMode = null, minConf = 0.7;
 let hlNodes = new Set(), hlLinks = new Set();
+let focusedNid = null;
 let recallHistory = [];
 
 // ===== TABS =====
@@ -395,10 +429,54 @@ function fpsLoop() {{
 }}
 
 // ===== INIT =====
+let dagMinConf = 0.85; // DAG 模式用更高阈值保留核心边
 function filteredGraphData() {{
+    const effectiveConf = dagMode ? Math.max(minConf, dagMinConf) : minConf;
+    let links = edgesData.filter(e => {{
+        if (e.confidence >= effectiveConf) return true;
+        if (focusedNid) {{
+            const s = typeof e.source==='object'?e.source.id:e.source;
+            const t = typeof e.target==='object'?e.target.id:e.target;
+            if (s===focusedNid||t===focusedNid) return true;
+        }}
+        return false;
+    }}).map(e => ({{ ...e }}));
+    // DAG 模式去环
+    if (dagMode) {{
+        // 1) 双向边只保留置信度高的
+        const pairBest = {{}};
+        links.forEach(e => {{
+            const s = typeof e.source==='object'?e.source.id:e.source;
+            const t = typeof e.target==='object'?e.target.id:e.target;
+            const key = [s,t].sort().join('|');
+            if (!pairBest[key] || e.confidence > pairBest[key].confidence) pairBest[key] = e;
+        }});
+        links = Object.values(pairBest);
+        // 2) DFS 移除回边破环
+        const adj = {{}};
+        links.forEach(e => {{
+            const s = typeof e.source==='object'?e.source.id:e.source;
+            if (!adj[s]) adj[s] = [];
+            adj[s].push(e);
+        }});
+        const WHITE=0, GRAY=1, BLACK=2;
+        const color = {{}};
+        const backEdges = new Set();
+        function dfs(u) {{
+            color[u] = GRAY;
+            for (const e of (adj[u]||[])) {{
+                const v = typeof e.target==='object'?e.target.id:e.target;
+                if (color[v] === GRAY) backEdges.add(e);
+                else if (!color[v]) dfs(v);
+            }}
+            color[u] = BLACK;
+        }}
+        nodesData.forEach(n => {{ if (!color[n.id]) dfs(n.id); }});
+        links = links.filter(e => !backEdges.has(e));
+    }}
     return {{
         nodes: nodesData.map(n => ({{ ...n, name: n.label }})),
-        links: edgesData.filter(e => e.confidence >= minConf).map(e => ({{ ...e }}))
+        links
     }};
 }}
 
@@ -431,37 +509,142 @@ function initGraph() {{
             if (hlNodes.size > 0) return hlNodes.has(node.id) ? (groupColors[node.group]||'#b2bec3') : 'rgba(40,50,70,0.25)';
             return groupColors[node.group] || '#b2bec3';
         }})
-        .nodeVal(n => n.value || 8)
+        .nodeVal(n => n.value || 3)
         .nodeOpacity(0.92)
         // --- 连线 ---
         .linkColor(link => {{
-            if (hlLinks.size > 0) return hlLinks.has(link) ? '#818cf8' : 'rgba(30,40,60,0.06)';
             const rgb = relRgb[link.relType] || defRelRgb;
-            const a = 0.06 + link.confidence * 0.32;
+            if (hlLinks.size > 0) {{
+                if (hlLinks.has(link)) return 'rgba('+rgb+',0.9)';
+                return 'rgba(30,40,60,0.04)';
+            }}
+            const a = 0.15 + link.confidence * 0.55;
             return 'rgba('+rgb+','+a+')';
         }})
-        .linkWidth(link => hlLinks.has(link) ? 1.8 : 0.25)
+        .linkWidth(link => {{
+            if (hlLinks.size > 0) return hlLinks.has(link) ? 2.0 : 0.15;
+            return 0.3 + link.confidence * 0.7;
+        }})
         .linkVisibility(link => linksOn)
-        .linkDirectionalArrowLength(0)
+        .linkDirectionalArrowLength(link => link.confidence >= 0.7 ? 3 : 0)
         .linkLabel(link => link.label)
         // --- 交互 ---
         .onNodeClick(node => {{
             focusNode(node.id);
         }})
         .onNodeHover(node => {{ el.style.cursor = node ? 'pointer' : 'default'; }})
-        .onBackgroundClick(() => resetHL());
+        .onBackgroundClick(() => resetHL())
+        .onDagError(e => console.warn('DAG cycle skipped:', e));
 
+    // 增强斥力让节点更分散
+    G.d3Force('charge').strength(-300);
+    // 减弱连线拉力
+    G.d3Force('link').distance(80);
     updateEdgeHud();
     window.addEventListener('resize', () => {{ G.width(el.clientWidth); G.height(el.clientHeight); }});
+}}
+
+// ===== CAMERA =====
+let camDist = 600;
+let isOrtho = false;
+
+function getCamDist() {{
+    const cp = G.cameraPosition();
+    return Math.sqrt(cp.x*cp.x + cp.y*cp.y + cp.z*cp.z) || camDist;
+}}
+
+function setCamView(view) {{
+    const d = getCamDist();
+    const pos = {{
+        top:   {{ x: 0, y: d, z: 0.1 }},
+        front: {{ x: 0, y: 0, z: d }},
+        back:  {{ x: 0, y: 0, z: -d }},
+        left:  {{ x: -d, y: 0, z: 0.1 }},
+        right: {{ x: d, y: 0, z: 0.1 }}
+    }};
+    G.cameraPosition(pos[view], {{ x: 0, y: 0, z: 0 }}, 600);
+    // 动画结束后重置相机 up 向量和控制器状态，消除摇移累积
+    setTimeout(() => {{
+        const camera = G.camera();
+        const ctrl = G.controls();
+        // 俯视时 up 朝 -Z，其余朝 +Y
+        if (view === 'top') {{
+            camera.up.set(0, 0, -1);
+        }} else {{
+            camera.up.set(0, 1, 0);
+        }}
+        ctrl.target.set(0, 0, 0);
+        if (ctrl._eye) ctrl._eye.subVectors(camera.position, ctrl.target);
+        if (ctrl._up0) ctrl._up0.copy(camera.up);
+        camera.lookAt(0, 0, 0);
+    }}, 650);
+}}
+
+function togglePersp() {{
+    isOrtho = !isOrtho;
+    const camera = G.camera();
+    const btn = document.getElementById('persp-btn');
+    if (isOrtho) {{
+        // 切换到正交
+        const d = getCamDist();
+        camera.fov = 1;
+        camera.zoom = 600 / d;
+        btn.classList.add('active');
+        btn.textContent = 'O';
+        btn.title = '正交模式 (点击切换透视)';
+    }} else {{
+        // 切换到透视
+        camera.fov = 75;
+        camera.zoom = 1;
+        btn.classList.remove('active');
+        btn.textContent = 'P';
+        btn.title = '透视模式 (点击切换正交)';
+    }}
+    camera.updateProjectionMatrix();
+    // 切换后自动适配视图
+    setTimeout(() => G.zoomToFit(400, 40), 100);
 }}
 
 // ===== CONTROLS =====
 function resetCamera() {{ G.zoomToFit(400, 40); }}
 
 function toggleDagMode() {{
-    const modes = [null,'td','bu','lr','rl','zout','zin','radialout','radialin'];
+    const modes = [null,'td','lr','radialout'];
     dagMode = modes[(modes.indexOf(dagMode)+1) % modes.length];
-    G.dagMode(dagMode);
+
+    // 每次切换都完全重置力参数，避免状态残留
+    G.dagMode(null).graphData({{nodes:[],links:[]}});
+
+    const gData = filteredGraphData();
+    if (dagMode) {{
+        G.warmupTicks(200).cooldownTicks(150).d3AlphaDecay(0.05).d3VelocityDecay(0.6);
+        const isRadial = dagMode === 'radialout';
+        G.d3Force('charge').strength(isRadial ? -200 : -600);
+        G.d3Force('link').distance(isRadial ? 30 : 40);
+    }} else {{
+        G.warmupTicks(0).cooldownTicks(80).d3AlphaDecay(0.06).d3VelocityDecay(0.4);
+        G.d3Force('charge').strength(-300);
+        G.d3Force('link').distance(80);
+    }}
+    const lvlDist = dagMode === 'radialout' ? 35 : (dagMode ? 50 : undefined);
+    G.dagMode(dagMode).dagLevelDistance(lvlDist).graphData(gData);
+
+    // 根据布局方向调整相机
+    const setCamera = () => {{
+        if (dagMode === 'td' || dagMode === 'lr') {{
+            G.cameraPosition({{ x: 0, y: 0, z: 800 }}, {{ x: 0, y: 0, z: 0 }}, 600);
+            setTimeout(() => G.zoomToFit(400, 60), 700);
+        }} else if (dagMode === 'radialout') {{
+            // radial 布局在 XZ 平面展开，从上方俯视最佳
+            G.cameraPosition({{ x: 0, y: 800, z: 0.1 }}, {{ x: 0, y: 0, z: 0 }}, 600);
+            setTimeout(() => G.zoomToFit(400, 60), 700);
+        }} else {{
+            G.zoomToFit(400, 60);
+        }}
+    }};
+    setTimeout(setCamera, dagMode ? 600 : 100);
+
+    updateEdgeHud();
     document.getElementById('dag-btn').textContent = dagMode ? 'DAG: '+dagMode : 'DAG 布局';
 }}
 
@@ -502,21 +685,36 @@ function showNodeDetail(nid) {{
     const dc = document.getElementById('detail-content');
     dc.style.display = 'block';
 
-    const rels = edgesData.filter(e => {{
+    const outRels = [], inRels = [];
+    edgesData.forEach(e => {{
         const s = typeof e.source==='object'?e.source.id:e.source;
         const t = typeof e.target==='object'?e.target.id:e.target;
-        return s===nid||t===nid;
+        if (s===nid) outRels.push(e);
+        else if (t===nid) inRels.push(e);
     }});
     const colsHtml = (m.columns||[]).map(c =>
         '<tr><td style="font-weight:500">'+c.name+'</td><td>'+c.dtype+'</td><td>'+(c.samples||[]).slice(0,3).join(', ')+'</td></tr>'
     ).join('');
-    const relsHtml = rels.map(r => {{
+    function relCard(r, dir) {{
         const s = typeof r.source==='object'?r.source.id:r.source;
         const t = typeof r.target==='object'?r.target.id:r.target;
-        const other = s===nid ? t : s;
-        const dir = s===nid ? '→ '+t : s+' →';
-        return '<div class="rel-item rel-link" onclick="focusNode(\\\''+other+'\\\')" style="cursor:pointer">'+dir+' <span class="arrow">('+r.label+')</span></div>';
-    }}).join('');
+        const other = dir==='out' ? t : s;
+        const dirColor = dir==='out' ? '#60a5fa' : '#4ade80';
+        const arrowSym = dir==='out' ? '→' : '←';
+        const confPct = (r.confidence*100).toFixed(0);
+        const confBg = r.confidence>=0.8 ? 'rgba(74,222,128,0.15)' : r.confidence>=0.5 ? 'rgba(251,191,36,0.15)' : 'rgba(248,113,113,0.15)';
+        const confColor = r.confidence>=0.8 ? '#4ade80' : r.confidence>=0.5 ? '#fbbf24' : '#f87171';
+        return '<div onclick="focusNode(\\\''+other+'\\\')" style="cursor:pointer;display:flex;align-items:center;padding:4px 6px;margin:2px 0;border-radius:4px;border-left:3px solid '+dirColor+';background:rgba(30,41,59,0.5);transition:background .15s" onmouseover="this.style.background=\\'rgba(30,41,59,0.9)\\'" onmouseout="this.style.background=\\'rgba(30,41,59,0.5)\\'">'
+            +'<span style="color:'+dirColor+';font-size:12px;margin-right:6px;flex-shrink:0">'+arrowSym+'</span>'
+            +'<span style="flex:1;min-width:0">'
+            +'<span style="color:#e2e8f0;font-size:11px;font-weight:500">'+other+'</span>'
+            +'<span style="color:#64748b;font-size:10px;margin-left:6px">'+r.label+'</span>'
+            +'</span>'
+            +'<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:'+confBg+';color:'+confColor+';flex-shrink:0;margin-left:6px">'+confPct+'%</span>'
+            +'</div>';
+    }}
+    const outHtml = outRels.length ? outRels.sort((a,b)=>b.confidence-a.confidence).map(r=>relCard(r,'out')).join('') : '<div style="color:#475569;font-size:11px;padding:4px">无</div>';
+    const inHtml = inRels.length ? inRels.sort((a,b)=>b.confidence-a.confidence).map(r=>relCard(r,'in')).join('') : '<div style="color:#475569;font-size:11px;padding:4px">无</div>';
 
     dc.innerHTML =
         '<h3 style="font-size:15px;margin-bottom:6px;color:#e2e8f0">'+nid+'</h3>'
@@ -525,8 +723,10 @@ function showNodeDetail(nid) {{
         + '<br>'+m.file_path+'</div>'
         + '<div style="font-size:12px;font-weight:500;color:#94a3b8;margin-bottom:4px">列结构</div>'
         + '<table><tr><th>列名</th><th>类型</th><th>示例</th></tr>'+colsHtml+'</table>'
-        + '<div style="font-size:12px;font-weight:500;color:#94a3b8;margin-bottom:4px">关联 ('+rels.length+')</div>'
-        + (relsHtml || '<div style="color:#475569;font-size:11px">无</div>');
+        + '<div style="font-size:12px;font-weight:500;color:#60a5fa;margin:10px 0 4px;border-top:1px solid #1e293b;padding-top:10px">引用了 → ('+outRels.length+')</div>'
+        + outHtml
+        + '<div style="font-size:12px;font-weight:500;color:#4ade80;margin:10px 0 4px;border-top:1px solid #1e293b;padding-top:10px">← 被引用 ('+inRels.length+')</div>'
+        + inHtml;
 }}
 
 // ===== RECALL =====
@@ -658,6 +858,16 @@ function hlRecall(idx, el) {{
 
 function focusNode(nid) {{
     showNodeDetail(nid);
+    // inject ALL edges for this node into graph (bypass confidence filter)
+    focusedNid = nid;
+    const oldNodes = G.graphData().nodes;
+    const posMap = {{}};
+    oldNodes.forEach(n => {{ posMap[n.id] = {{x:n.x, y:n.y, z:n.z}}; }});
+    // 提前保存目标节点位置（graphData 重建后位置可能被引擎重置）
+    const tgt = posMap[nid] || {{x:0, y:0, z:0}};
+    const gData = filteredGraphData();
+    gData.nodes.forEach(n => {{ if(posMap[n.id]) Object.assign(n, posMap[n.id]); }});
+    G.graphData(gData);
     // highlight this node + direct neighbors
     hlNodes = new Set([nid]);
     hlLinks = new Set();
@@ -667,17 +877,39 @@ function focusNode(nid) {{
         if (s===nid||t===nid) {{ hlLinks.add(lk); hlNodes.add(s); hlNodes.add(t); }}
     }});
     refreshHL();
-    // fly camera
-    const nd = G.graphData().nodes.find(n=>n.id===nid);
-    if (nd) {{
-        const d = 120;
-        const r = 1 + d / Math.hypot(nd.x, nd.y, nd.z);
-        G.cameraPosition({{x:nd.x*r, y:nd.y*r, z:nd.z*r}}, nd, 800);
-    }}
+    updateEdgeHud();
+    // fly camera — 沿当前视线方向在节点前方固定距离，确保节点居中
+    setTimeout(() => {{
+        // 优先用实时位置，兜底用保存位置
+        const nd = G.graphData().nodes.find(n=>n.id===nid);
+        const px = (nd && nd.x != null) ? nd.x : tgt.x;
+        const py = (nd && nd.y != null) ? nd.y : tgt.y;
+        const pz = (nd && nd.z != null) ? nd.z : tgt.z;
+        const cam = G.cameraPosition();
+        let dx = cam.x - px, dy = cam.y - py, dz = cam.z - pz;
+        const len = Math.sqrt(dx*dx + dy*dy + dz*dz) || 1;
+        const dist = 150;
+        dx = dx/len*dist; dy = dy/len*dist; dz = dz/len*dist;
+        G.cameraPosition(
+            {{ x: px+dx, y: py+dy, z: pz+dz }},
+            {{ x: px, y: py, z: pz }},
+            800
+        );
+    }}, 300);
 }}
 
 function resetHL() {{
     hlNodes=new Set(); hlLinks=new Set();
+    if (focusedNid) {{
+        focusedNid = null;
+        const oldNodes = G.graphData().nodes;
+        const posMap = {{}};
+        oldNodes.forEach(n => {{ posMap[n.id] = {{x:n.x, y:n.y, z:n.z}}; }});
+        const gData = filteredGraphData();
+        gData.nodes.forEach(n => {{ if(posMap[n.id]) Object.assign(n, posMap[n.id]); }});
+        G.graphData(gData);
+        updateEdgeHud();
+    }}
     refreshHL();
 }}
 

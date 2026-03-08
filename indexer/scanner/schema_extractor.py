@@ -62,6 +62,9 @@ class SchemaExtractor:
         table_name = base_name if sheet_name in (
             'Sheet1', base_name, None) else f"{base_name}_{sheet_name}"
 
+        # 检测并跳过元数据表头行（英文字段名行、类型标记行等）
+        df = self.reader.skip_header_rows(df)
+
         # 收集列信息
         col_samples = self.reader.collect_column_samples(df)
         columns = []

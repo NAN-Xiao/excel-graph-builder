@@ -1,122 +1,119 @@
 {
   "column_to_tables": {
     "键值": [
-      "data_constant",
-      "instanceTroop_instancePlayerHero",
-      "skill_client_skill_show",
-      "data_constant_battle_constant",
-      "gift_package_gift_condition",
-      "hero_hero_star",
-      "hero_hero_offices",
-      "map_battle_battle_const",
-      "pve_skill_skill_buff",
-      "pve_skill",
-      "pve_skill_pve_passive_effect",
+      "client_show_client_bullet",
       "model",
-      "pve_config_zombie_config",
-      "pve_skill_skill_action",
-      "skill",
+      "skill_condition",
       "powerconsume_powerConsume",
-      "buff",
       "ai_scheme_aiScheme",
-      "model_model_pve",
       "model_map_formation",
       "gift_package",
-      "client_show_client_bullet",
-      "alliance_constant",
-      "pve_skill_hit_effect",
       "pve_skill_skill_target_action",
-      "client_show_client_effect",
-      "gift_package_gift_shoppage",
+      "data_constant_battle_constant",
+      "buff",
       "soldier_consumption",
+      "skill_client_skill_show",
+      "hero",
+      "model_model_pve",
+      "map_battle_battle_const",
+      "gift_package_gift_shoppage",
+      "gift_package_gift_condition",
+      "pve_skill_pve_passive_effect",
+      "pve_skill_skill_buff",
+      "skill",
       "monsterTroop_monsterHero",
+      "hero_hero_offices",
+      "client_show_client_effect",
+      "data_constant",
+      "pve_skill_skill_action",
+      "hero_hero_star",
+      "pve_skill",
+      "instanceTroop_instancePlayerHero",
+      "pve_skill_hit_effect",
       "skill_skill_level",
-      "skill_condition",
-      "hero"
+      "pve_config_zombie_config",
+      "alliance_constant"
     ],
     "#策划备注": [
-      "data_constant",
-      "mail_bufftemplate",
-      "player_info_head",
-      "instancesTag_rpgRole",
-      "pve_pve_diff",
-      "pve_config_zombie_config",
-      "baseLevel",
-      "area_area_config",
-      "zombie_survivor",
-      "world_building_worldBuilding",
-      "unlock_switch",
-      "entity_menu_entity_menu_config",
-      "army",
-      "monsterTroop",
-      "buff",
-      "zombie",
-      "instanceTroop_instancePlayerTroop",
-      "hero_hero_level",
-      "mail",
-      "army_monster",
       "recharge",
-      "skill_condition",
-      "pve_pve_chapter",
-      "instanceTroop_instancePlayerHero",
-      "gvgProcessConfig",
-      "pve_character",
-      "resource_ResRefresh",
-      "milestone",
-      "skill",
-      "default_sth_defaultSth",
-      "ai_scheme_aiScheme",
-      "threatRule_threatEvents",
-      "threatRule_threatMode",
-      "worldMonster",
-      "video_point_videoPoint",
-      "kingdomGift",
-      "instanceSkill",
-      "city_node_type_cityNodeTypeConf",
-      "sceneManager",
-      "gift_package_gift_condition",
-      "instanceRule_instanceGameRule",
-      "map_battle_battle_const",
-      "instanceRule_instanceTroopRule",
-      "army_attribute",
-      "guide_config",
-      "model_map_formation",
-      "alliance_constant",
-      "instanceRule_instanceStatistic",
-      "instances",
-      "building_buildingGroup",
-      "building",
-      "instancesGroup",
-      "gift_package_gift_shoppage",
-      "instanceTroop_instancePlayerSoldier",
-      "matchingEntityConfig_matchingTeamConfig",
-      "monsterTroop_monsterHero",
-      "matchingEntityRule_matchingTeamRule",
-      "search",
-      "resource_ResRules",
-      "army_trait",
-      "instanceMonster",
-      "mail_dynamicbuff",
-      "pve_pve_level",
-      "data_constant_battle_constant",
-      "zombie_trap_item",
-      "weapon",
-      "socialRelation",
-      "recipe",
-      "lodConfig",
-      "instancesTag",
-      "item",
-      "mail_mailTemplate",
-      "gift_package",
-      "resource_Resinfo",
+      "zombie",
       "player_info_head_bg",
-      "matchingEntityRule_matchingAllianceRule",
-      "matchingEntityConfig_matchingAllianceConfig",
-      "recharge_rechargeShow",
+      "pve_character",
+      "weapon",
+      "instanceRule_instanceStatistic",
+      "monsterTroop",
+      "instanceTroop_instancePlayerSoldier",
+      "zombie_trap_item",
+      "threatRule_threatEvents",
+      "army_monster",
+      "resource_ResRefresh",
+      "gvgProcessConfig",
+      "unlock_switch",
+      "instanceTroop_instancePlayerHero",
       "skill_skill_level",
+      "video_point_videoPoint",
+      "guide_config",
+      "mail_dynamicbuff",
+      "kingdomGift",
+      "building",
+      "hero_hero_level",
+      "buff",
+      "pve_pve_level",
+      "monsterTroop_monsterHero",
       "threatRule_threatFormula",
+      "lodConfig",
+      "matchingEntityConfig_matchingTeamConfig",
+      "default_sth_defaultSth",
+      "player_info_head",
+      "instanceTroop_instancePlayerTroop",
+      "instanceReward",
+      "alliance_constant",
+      "skill_condition",
+      "matchingEntityRule_matchingTeamRule",
+      "army_attribute",
+      "threatRule_threatMode",
+      "gift_package",
+      "instancesGroup",
+      "data_constant_battle_constant",
+      "entity_menu_entity_menu_config",
       "hero",
-      "instanceReward"
+      "world_building_worldBuilding",
+      "instanceRule_instanceTroopRule",
+      "data_constant",
+      "instancesTag_rpgRole",
+      "mail_bufftemplate",
+      "building_buildingGroup",
+      "baseLevel",
+      "instances",
+      "milestone",
+      "instanceRule_instanceGameRule",
+      "instancesTag",
+      "socialRelation",
+      "pve_pve_chapter",
+      "pve_config_zombie_config",
+      "resource_ResRules",
+      "instanceMonster",
+      "ai_scheme_aiScheme",
+      "sceneManager",
+      "model_map_formation",
+      "area_area_config",
+      "resource_Resinfo",
+      "army_trait",
+      "matchingEntityRule_matchingAllianceRule",
+      "search",
+      "recharge_rechargeShow",
+      "gift_package_gift_shoppage",
+      "map_battle_battle_const",
+      "gift_package_gift_condition",
+      "skill",
+      "army",
+      "zombie_survivor",
+      "mail_mailTemplate",
+      "matchingEntityConfig_matchingAllianceConfig",
+      "instanceSkill",
+      "pve_pve_diff",
+      "city_node_type_cityNodeTypeConf",
+      "worldMonster"
     ],
     "环境限定": [
       "ai_scheme_aiScheme"
@@ -125,9 +122,6 @@
       "ai_scheme_aiScheme"
     ],
     "是否群体AI": [
-      "ai_scheme_aiScheme"
-    ],
-    "群体AI关联设置": [
       "ai_scheme_aiScheme"
     ],
     "初始状态": [
@@ -143,8 +137,8 @@
       "ai_scheme_aiScheme"
     ],
     "脱战距离": [
-      "ai_scheme_aiScheme",
-      "zombie_bt_ai"
+      "zombie_bt_ai",
+      "ai_scheme_aiScheme"
     ],
     "游荡距离": [
       "ai_scheme_aiScheme"
@@ -155,142 +149,97 @@
     "AI行为组权重": [
       "ai_scheme_aiScheme"
     ],
-    "id": [
-      "achievement_achievementGroup",
-      "alliance_gift_box",
-      "kingdomBuff",
-      "kingdom_official",
-      "alliance_gift",
-      "default_sth_defaultSth",
-      "kvkSeason_kvkScene",
-      "achievement",
-      "task_daily_task_group",
-      "world_building_worldBuilding",
-      "lord_exp_lordExp",
-      "kvkSeason"
-    ],
-    "#成就组备注": [
-      "achievement_achievementGroup"
-    ],
-    "成就": [
-      "achievement_achievementGroup"
-    ],
-    "成就类型": [
-      "achievement"
-    ],
-    "任务索引": [
-      "achievement"
-    ],
-    "奖励": [
-      "mail",
-      "video_gift_videoGift",
-      "alliance_gift",
-      "milestone",
-      "achievement"
-    ],
-    "成就名称": [
-      "achievement"
-    ],
-    "成就名称.1": [
-      "achievement"
-    ],
-    "成就图片": [
-      "achievement"
-    ],
     "主键": [
-      "rank",
-      "worldScene_monsterWeights",
-      "pve_pve_chapter",
-      "msg_config",
-      "city_area_gridEvent",
-      "pve_pve_level",
-      "worldScene_monsterFresh",
+      "video_point_videoPoint",
+      "video_gift_videoGift",
+      "instanceMonster",
+      "worldMonster_monsterExtraDrop",
+      "guide_config",
       "unlock",
-      "player_info_head",
+      "army_attribute",
+      "kingdomGift",
+      "zombie",
+      "player_info_head_bg",
+      "pve_character",
+      "area_area_config",
+      "weapon",
+      "monsterTroop",
+      "rank_rank_reward",
+      "resource_Resinfo",
+      "instancesGroup",
+      "army_trait",
+      "pve_pve_level",
+      "instanceTroop_instancePlayerSoldier",
+      "city_area_gridEvent",
+      "search",
+      "trigger_config",
+      "zombie_trap_item",
+      "city_area_gridBG",
+      "pve_config_pve_info_config",
+      "matchingEntityRule_matchAssess",
+      "army_monster",
+      "instancesTag_gvgJob",
       "instancesTag_rpgRole",
       "zombie_bt_ai",
-      "zombie_trap_item",
-      "pve_character",
-      "weapon",
-      "pve_config_pve_info_config",
       "resource_ResRefresh",
-      "army_attribute",
-      "city_area_gridBG",
-      "rank_rank_reward",
-      "area_area_config",
+      "msg_config",
       "zombie_survivor",
-      "worldScene_monsterLevel",
-      "guide_config",
-      "monsterTroop",
-      "resource_Resinfo",
-      "zombie",
-      "matchingEntityRule_matchAssess",
-      "instancesTag_gvgJob",
-      "instanceTroop_instancePlayerTroop",
-      "player_info_head_bg",
-      "guide_config_guide_dialog",
       "instances",
-      "instancesGroup",
-      "instanceTroop_instancePlayerSoldier",
+      "worldScene_monsterWeights",
+      "guide_config_guide_dialog",
       "matchingEntityConfig_matchingTeamConfig",
-      "video_point_videoPoint",
-      "matchingEntityConfig_matchingAllianceConfig",
+      "player_info_head",
+      "worldScene_monsterLevel",
       "city_area_areaUnlock",
-      "video_gift_videoGift",
-      "army_monster",
-      "trigger_config",
-      "search",
-      "resource_ResRules",
-      "army_trait",
-      "instanceMonster",
-      "kingdomGift",
-      "worldMonster_monsterExtraDrop"
+      "rank",
+      "matchingEntityConfig_matchingAllianceConfig",
+      "instanceTroop_instancePlayerTroop",
+      "pve_pve_chapter",
+      "worldScene_monsterFresh",
+      "resource_ResRules"
     ],
     "地块关卡类型": [
       "area_area_config"
     ],
     "名称": [
-      "equip",
       "resource_Resinfo",
-      "city_area_gridResource",
-      "resource_ResRefresh",
-      "science",
-      "video_gift_videoGift",
       "milestone",
-      "area_area_config",
+      "video_gift_videoGift",
+      "science",
+      "alliance_building",
       "equip_suit",
-      "alliance_science_alliance_skill",
-      "city_area_gridBuilding",
-      "alliance_building"
+      "area_area_config",
+      "equip",
+      "alliance_science_alliance_skill"
     ],
     "icon": [
       "area_area_config"
     ],
     "ID": [
-      "activity_activity_param",
-      "recharge_rechargeShow",
       "item_recycle",
+      "activity_activity_extra_param",
+      "shop",
       "point_transform_pointTransform",
-      "explore_task_exploreTaskFresh",
-      "explore_task_exploreTask",
       "activity",
+      "recharge",
       "recharge_rechargeProduct",
+      "explore_task_exploreTaskFresh",
+      "reward",
+      "explore_task_exploreTask",
+      "activity_activity_param",
       "baseLevel",
       "shop_shop_item",
-      "recharge",
-      "alliance_shop_alliance_shopItem",
-      "activity_activity_extra_param",
-      "reward",
-      "shop"
+      "recharge_rechargeShow",
+      "alliance_shop_alliance_shopItem"
     ],
     "活动名称": [
       "activity"
     ],
     "#策划备注1": [
-      "effect",
       "activity",
-      "mail",
-      "panel_config"
+      "panel_config",
+      "effect",
+      "mail"
     ],
     "活动图标": [
       "activity"
@@ -299,38 +248,25 @@
       "activity"
     ],
     "宣传图": [
-      "recharge_rechargeShow",
-      "activity"
+      "activity",
+      "recharge_rechargeShow"
     ],
     "敬请期待_宣传图": [
       "activity"
     ],
     "宣传图标题": [
-      "recharge_rechargeShow",
-      "activity"
-    ],
-    "#策划备注2": [
       "activity",
-      "mail"
+      "recharge_rechargeShow"
     ],
     "宣传图文字": [
-      "recharge_rechargeShow",
-      "activity"
-    ],
-    "#策划备注3": [
-      "activity"
+      "activity",
+      "recharge_rechargeShow"
     ],
     "副标题": [
       "activity",
       "mail"
     ],
-    "#策划备注4": [
-      "activity"
-    ],
     "活动说明": [
-      "activity"
-    ],
-    "#策划备注5": [
       "activity"
     ],
     "是否在活动日历显示": [
@@ -349,31 +285,31 @@
       "activity"
     ],
     "显示优先级": [
-      "effect",
+      "mail_bufftemplate",
       "activity",
-      "mail_bufftemplate"
+      "effect"
     ],
     "活动奖励显示": [
       "activity"
     ],
     "界面名称": [
-      "recharge_rechargeShow",
-      "activity"
+      "activity",
+      "recharge_rechargeShow"
     ],
     "预览界面名称": [
       "activity"
     ],
     "类型": [
-      "buff_attribute",
-      "alliance_buff_attribute",
+      "video_point_videoPoint",
       "mail",
-      "hud_config_personal_config",
-      "instancesTag_gvgJob",
-      "activity",
       "default_sth_defaultSth",
-      "worldMonster",
       "instanceMonster",
-      "video_point_videoPoint"
+      "activity",
+      "instancesTag_gvgJob",
+      "buff_attribute",
+      "hud_config_personal_config",
+      "alliance_buff_attribute",
+      "worldMonster"
     ],
     "是否开启": [
       "activity"
@@ -412,16 +348,14 @@
       "activity"
     ],
     "#备注": [
-      "activity_activity_param",
-      "rank",
-      "battle_system_event_battleSystemEventType",
-      "task",
-      "video_gift_videoGift",
-      "shop_shop_item",
       "default_sth_defaultSth",
-      "recharge",
+      "activity_activity_extra_param",
+      "video_gift_videoGift",
+      "task",
+      "rank",
       "unlock_abtest",
-      "activity_activity_extra_param"
+      "activity_activity_param",
+      "battle_system_event_battleSystemEventType"
     ],
     "任务组": [
       "task_daily_task_group",
@@ -437,9 +371,6 @@
       "activity_activity_param"
     ],
     "排行榜奖励发放": [
-      "activity_activity_param"
-    ],
-    "活动全局计数(用ConditionType计数实现)": [
       "activity_activity_param"
     ],
     "奖励邮件ID": [
@@ -464,73 +395,60 @@
       "activity_activity_extra_param"
     ],
     "#备注.1": [
-      "activity_activity_extra_param",
-      "task"
+      "task",
+      "activity_activity_extra_param"
     ],
     "字符串参数": [
       "activity_activity_extra_param"
     ],
-    "#参数备注": [
-      "activity_activity_extra_param"
+    "id": [
+      "kingdom_official",
+      "default_sth_defaultSth",
+      "kvkSeason",
+      "kingdomBuff",
+      "achievement_achievementGroup",
+      "alliance_gift",
+      "world_building_worldBuilding",
+      "lord_exp_lordExp",
+      "alliance_gift_box",
+      "task_daily_task_group",
+      "kvkSeason_kvkScene",
+      "achievement"
     ],
-    "字符串参数2": [
-      "activity_activity_extra_param"
+    "成就": [
+      "achievement_achievementGroup"
     ],
-    "#参数备注.1": [
-      "activity_activity_extra_param"
+    "成就类型": [
+      "achievement"
+    ],
+    "任务索引": [
+      "achievement"
+    ],
+    "奖励": [
+      "mail",
+      "milestone",
+      "video_gift_videoGift",
+      "alliance_gift",
+      "achievement"
+    ],
+    "成就名称": [
+      "achievement"
+    ],
+    "成就名称.1": [
+      "achievement"
+    ],
+    "成就图片": [
+      "achievement"
     ],
     "大本等级": [
-      "baseLevel",
-      "task_task_chapter"
+      "task_task_chapter",
+      "baseLevel"
     ],
     "时代": [
       "baseLevel"
     ],
-    "额外建筑数量": [
-      "baseLevel"
-    ],
     "建造队列上限": [
       "baseLevel"
-    ],
-    "AI行为树配置方案ID": [
-      "battleBehavior"
-    ],
-    "#策划说明": [
-      "battleAttribute",
-      "battleBehavior"
-    ],
-    "待机扩展行为树": [
-      "battleBehavior"
-    ],
-    "战斗扩展行为树": [
-      "battleBehavior"
-    ],
-    "移动扩展行为树": [
-      "battleBehavior"
-    ],
-    "战斗移动扩展行为树": [
-      "battleBehavior"
-    ],
-    "驻防扩展行为树": [
-      "battleBehavior"
-    ],
-    "巡逻扩展行为树": [
-      "battleBehavior"
-    ],
-    "追击扩展行为树": [
-      "battleBehavior"
-    ],
-    "溃败扩展行为树": [
-      "battleBehavior"
-    ],
-    "返回扩展行为树": [
-      "battleBehavior"
-    ],
-    "销毁扩展行为树": [
-      "battleBehavior"
-    ],
-    "建造扩展行为树": [
-      "battleBehavior"
     ],
     "战斗实体属性枚举ID": [
       "battleAttribute"
@@ -538,11 +456,12 @@
     "#属性名备注": [
       "battleAttribute"
     ],
-    "属性名Key_new": [
+    "#策划说明": [
+      "battleBehavior",
       "battleAttribute"
     ],
-    "属性描述Key_new": [
-      "battleAttribute"
+    "AI行为树配置方案ID": [
+      "battleBehavior"
     ],
     "主键，必须>100000": [
       "army"
@@ -554,16 +473,16 @@
       "army"
     ],
     "兵种类型": [
-      "zombie_survivor",
       "army_monster",
-      "army",
-      "zombie"
+      "zombie",
+      "zombie_survivor",
+      "army"
     ],
     "兵种等级": [
-      "zombie_survivor",
       "army_monster",
-      "army",
-      "zombie"
+      "zombie",
+      "zombie_survivor",
+      "army"
     ],
     "世界场景AI部队显示模型": [
       "army"
@@ -576,33 +495,33 @@
       "army"
     ],
     "部队图标，\n路径：Assets/Game_Prefab/texture/army_icon": [
-      "zombie_survivor",
       "army_monster",
-      "army",
-      "zombie"
+      "zombie",
+      "zombie_survivor",
+      "army"
     ],
     "部队形象\n路径：Assets/Game_Prefab/texture/army_icon": [
       "army_monster",
       "army"
     ],
     "基础攻击": [
-      "zombie_survivor",
       "army_monster",
-      "army",
-      "zombie"
+      "zombie",
+      "zombie_survivor",
+      "army"
     ],
     "基础防御": [
-      "zombie_survivor",
       "army_monster",
-      "army",
-      "zombie"
+      "zombie",
+      "zombie_survivor",
+      "army"
     ],
     "基础生命": [
-      "zombie",
       "army_monster",
-      "zombie_survivor",
       "army",
-      "pve_character"
+      "zombie",
+      "pve_character",
+      "zombie_survivor"
     ],
     "基础行军速度": [
       "army_monster",
@@ -638,16 +557,16 @@
       "army"
     ],
     "优先级": [
-      "army",
-      "recharge"
+      "recharge",
+      "army"
     ],
     "击杀积分": [
       "army"
     ],
     "普攻技能表现": [
       "army_monster",
-      "army",
-      "hero"
+      "hero",
+      "army"
     ],
     "怪物名称，\n填写key_new表id": [
       "army_monster"
@@ -656,11 +575,11 @@
       "army_monster"
     ],
     "显示模型": [
-      "zombie",
       "army_monster",
-      "zombie_survivor",
+      "zombie",
+      "pve_character",
       "zombie_trap_item",
-      "pve_character"
+      "zombie_survivor"
     ],
     "属性名称，索引key_new表id": [
       "army_attribute",
@@ -678,8 +597,8 @@
       "army_attribute"
     ],
     "战斗系统事件类型": [
-      "battle_system_event_battleSystemEventType",
-      "battle_system_event_conditionRelation"
+      "battle_system_event_conditionRelation",
+      "battle_system_event_battleSystemEventType"
     ],
     "#战斗事件名": [
       "battle_system_event_battleSystemEventType"
@@ -693,61 +612,115 @@
     "条件类型": [
       "battle_system_event_conditionRelation"
     ],
+    "效果名称": [
+      "buff"
+    ],
+    "#效果描述": [
+      "buff"
+    ],
+    "效果描述": [
+      "buff"
+    ],
+    "效果图标": [
+      "buff"
+    ],
+    "效果逻辑ID": [
+      "buff"
+    ],
+    "是否仅逻辑效果": [
+      "buff"
+    ],
+    "效果等级": [
+      "buff"
+    ],
+    "效果作用兵种类型": [
+      "buff"
+    ],
+    "效果目标选择区域类型": [
+      "buff"
+    ],
+    "效果目标选择数量、类型": [
+      "buff"
+    ],
+    "效果目标选择器筛选规则": [
+      "buff"
+    ],
+    "参数数值类型": [
+      "buff"
+    ],
+    "效果参数数值": [
+      "buff"
+    ],
+    "效果持续回合数": [
+      "buff"
+    ],
+    "效果CD回合数": [
+      "buff"
+    ],
+    "效果触发条件参数配置": [
+      "buff"
+    ],
+    "技能效果生效几率": [
+      "buff"
+    ],
+    "叠加规则": [
+      "buff",
+      "item"
+    ],
+    "是否可重置时间": [
+      "buff"
+    ],
+    "是否可驱散": [
+      "buff"
+    ],
+    "效果前端特效组": [
+      "buff"
+    ],
+    "效果文本显示类型": [
+      "buff"
+    ],
+    "效果tips文本": [
+      "buff"
+    ],
     "编号": [
-      "effect_autoEffect",
-      "equip",
-      "buff_attribute",
-      "alliance_buff_attribute",
-      "buff_attribute_buff_client",
       "milestone",
-      "effect_effectShowGroup",
-      "material_merge_MaterialMerge",
-      "vip",
-      "item",
-      "equip_suit",
-      "alliance_science_alliance_donate",
+      "effect",
       "equip_refine",
-      "effect"
+      "buff_attribute",
+      "vip",
+      "buff_attribute_buff_client",
+      "item",
+      "effect_autoEffect",
+      "alliance_science_alliance_donate",
+      "effect_effectShowGroup",
+      "equip_suit",
+      "alliance_buff_attribute",
+      "equip",
+      "material_merge_MaterialMerge"
     ],
     "#buff名称": [
+      "buff_attribute",
       "alliance_buff_attribute",
-      "buff_attribute_buff_client",
-      "buff_attribute"
+      "buff_attribute_buff_client"
     ],
     "名字": [
-      "weapon",
       "buff_attribute",
-      "zombie",
-      "instanceTroop_instancePlayerTroop",
       "buff_attribute_buff_client",
-      "player_info_head_bg",
-      "zombie_survivor",
-      "player_info_head",
       "zombie_bt_ai",
+      "zombie",
+      "player_info_head_bg",
+      "pve_character",
+      "weapon",
+      "instanceTroop_instancePlayerTroop",
       "zombie_trap_item",
-      "pve_character"
+      "zombie_survivor"
     ],
     "数值类型": [
-      "alliance_buff_attribute",
-      "buff_attribute"
+      "buff_attribute",
+      "alliance_buff_attribute"
     ],
     "条件": [
       "buff_attribute"
-    ],
-    "图标": [
-      "equip",
-      "buff_attribute",
-      "client_rank_alliance_rank",
-      "buff_attribute_buff_client",
-      "normal_rank",
-      "effect_effectShowGroup",
-      "item",
-      "alliance_science",
-      "world_building_worldBuilding",
-      "alliance_science_alliance_skill",
-      "effect",
-      "alliance_building",
-      "pve_character"
     ],
     "应用场景（1沙盘2副本3kvk）": [
       "buff_attribute"
@@ -758,9 +731,20 @@
     "需要计算的buff_id，可能需要多个，如加步兵攻击力、加全体攻击力": [
       "buff_attribute_buff_client"
     ],
-    "页签": [
+    "图标": [
+      "client_rank_alliance_rank",
+      "effect",
+      "item",
       "buff_attribute_buff_client",
-      "science"
+      "world_building_worldBuilding",
+      "normal_rank",
+      "effect_effectShowGroup",
+      "alliance_building",
+      "pve_character"
+    ],
+    "页签": [
+      "science",
+      "buff_attribute_buff_client"
     ],
     "排序，小的在前": [
       "buff_attribute_buff_client"
@@ -773,9 +757,12 @@
       "data_constant"
     ],
     "@类型": [
-      "data_constant_battle_constant",
       "alliance_constant",
+      "data_constant_battle_constant",
       "data_constant"
+    ],
+    "数据": [
+      "default_sth_defaultSth"
     ],
     "解锁地块id 关联grid表id": [
       "city_area_areaUnlock"
@@ -783,19 +770,10 @@
     "解锁前置条件": [
       "city_area_areaUnlock"
     ],
-    "区域地表网格模型id": [
-      "city_area_areaUnlock"
-    ],
-    "填写model表中配置好的网格模型（调整区域后需要重新配置）": [
-      "city_area_areaUnlock"
-    ],
     "必须解锁事件": [
       "city_area_areaUnlock"
     ],
     "非必须解锁事件": [
-      "city_area_areaUnlock"
-    ],
-    "解锁区域四个角落坐标": [
       "city_area_areaUnlock"
     ],
     "解锁地块id 关联grid表id.1": [
@@ -807,27 +785,7 @@
     "地表信息 areaBG(此列必须有值，取值范围参考gridBG表)": [
       "city_area_grid"
     ],
-    "绑定资源id 资源cityResource\n如果要跨越多个地格，配置左下角": [
-      "city_area_grid"
-    ],
-    "建筑层Id 建筑层信息\n标注到左下角的地格位置": [
-      "city_area_grid"
-    ],
     "绑定事件id gridEvent \n事件ideventTYpe": [
-      "city_area_grid"
-    ],
-    "迷雾id": [
-      "city_area_grid"
-    ],
-    "条件描述": [
-      "city_area_gridEvent",
-      "city_area_grid"
-    ],
-    "条件描述规则": [
-      "city_area_gridEvent",
-      "city_area_grid"
-    ],
-    "模型角度与缩放": [
       "city_area_grid"
     ],
     "前置条件(解锁条件判断填写gridId)": [
@@ -854,26 +812,11 @@
     "解锁时间(s)": [
       "city_area_gridEvent"
     ],
-    "解锁中特效": [
-      "city_area_gridEvent"
-    ],
-    "解锁事件标题": [
-      "city_area_gridEvent"
-    ],
-    "解锁事件描述": [
-      "city_area_gridEvent"
-    ],
-    "解锁消耗": [
-      "city_area_gridEvent"
-    ],
     "角度信息": [
       "city_area_gridEvent"
     ],
     "策划备注": [
-      "rank_rank_reward",
-      "city_area_gridEvent",
-      "resource",
-      "resource_counter_resource"
+      "city_area_gridEvent"
     ],
     "绑定事件gridid": [
       "city_area_gridEvent"
@@ -884,191 +827,57 @@
     "自由城建标识": [
       "city_area_gridBG"
     ],
-    "ID\n配置到地格左下角\n底基层覆盖到的格子不可自由建造": [
-      "city_area_gridBuilding"
+    "#注释": [
+      "model_entity_attach",
+      "effect_autoEffect",
+      "model",
+      "model_model_pve"
     ],
-    "地基接壤类型\n1-空地 自由城建\n2-完全覆盖地基 指定地基建造，建筑大小一定要跟地基一致\n3-地基接壤 指定地基建造": [
-      "city_area_gridBuilding"
+    "开启条件": [
+      "effect_autoEffect"
     ],
-    "描述": [
-      "alliance_alliance_permission",
-      "weapon",
-      "city_area_gridResource",
-      "instancesTag_gvgJob",
-      "alliance_flag",
-      "city_area_gridBuilding"
+    "关闭条件": [
+      "effect_autoEffect"
     ],
-    "宽": [
-      "city_area_gridResource",
-      "city_area_gridBuilding",
-      "city_area_gridFog"
+    "触发的effect": [
+      "effect_autoEffect"
     ],
-    "高": [
-      "city_area_gridResource",
-      "city_area_gridBuilding",
-      "city_area_gridFog"
+    "持续时长(秒)": [
+      "effect_autoEffect"
     ],
-    "地基模型": [
-      "city_area_gridBuilding"
+    "buffAttr值": [
+      "effect_autoEffect"
     ],
-    "指定建造建筑ID": [
-      "city_area_gridBuilding"
+    "组": [
+      "effect"
     ],
-    "类型(矿山，铁矿等等)  1，铁矿山，2 采石场， ": [
-      "city_area_gridBuilding"
+    "触发的buff": [
+      "effect"
     ],
-    "类型+等级\n资源层": [
-      "city_area_gridResource"
+    "客户端是否要显示": [
+      "effect"
     ],
-    "类型\n101=野果\n102=鹿\n103=鱼（必须在河上）\n104=农田（无须资源点）\n105=羊圈（无须资源点）\n112=木2\n113=木3\n114=木4": [
-      "city_area_gridResource"
+    "effect名称，key_new表字段": [
+      "effect"
     ],
-    "模型1\n资源本体模型": [
-      "city_area_gridResource"
-    ],
-    "模型2\n准备阶段": [
-      "city_area_gridResource"
-    ],
-    "模型3\n采集阶段": [
-      "city_area_gridResource"
-    ],
-    "点击音效": [
-      "building",
-      "city_area_gridResource"
-    ],
-    "点击音效（点击采集阶段模型）": [
-      "city_area_gridResource"
-    ],
-    "对应资源\n-1=非资源\n1=食物\n2=木头\n3=石头\n4=铁\n5=金钱": [
-      "city_area_gridResource"
-    ],
-    "采完形式\n0=永久存在\n1=采完消失\n2=残留消失\n3=采完再生": [
-      "city_area_gridResource"
-    ],
-    "残留时长(秒)": [
-      "city_area_gridResource"
-    ],
-    "残留模型": [
-      "city_area_gridResource"
-    ],
-    "资源等级": [
-      "city_area_gridResource",
-      "resource_ResRefresh"
-    ],
-    "基础资源量\n-1=无限": [
-      "city_area_gridResource"
-    ],
-    "采集需要人口": [
-      "city_area_gridResource"
-    ],
-    "采集位置\n0=最近位置\n1=中心": [
-      "city_area_gridResource"
-    ],
-    "循环类型\n1=一次预备，无限采集\n2=一次预备，有限采集": [
-      "city_area_gridResource"
-    ],
-    "准备阶段动作\nvillager_anim 表": [
-      "city_area_gridResource"
-    ],
-    "准备阶段时长\n最大时间(秒)": [
-      "city_area_gridResource"
-    ],
-    "每一下的采集动作": [
-      "city_area_gridResource"
-    ],
-    "采集动作时长\n每一下采集动作\n的时长(秒)": [
-      "city_area_gridResource"
-    ],
-    "城内采集速度\n一次采集多少点资源": [
-      "city_area_gridResource"
-    ],
-    "搬运动作": [
-      "city_area_gridResource"
-    ],
-    "是否重新生成\n0=否\n1=是": [
-      "city_area_gridResource"
-    ],
-    "生成位置\n1=空地随机\n2=河上随机": [
-      "city_area_gridResource"
-    ],
-    "生成间隔\n填生成时间间隔（秒）\n-1=不生成": [
-      "city_area_gridResource"
-    ],
-    "生成结束人口数\n上一级生成结束，开始下一级": [
-      "city_area_gridResource"
-    ],
-    "可生成区域": [
-      "city_area_gridResource"
-    ],
-    "各区域可生成数量": [
-      "city_area_gridResource"
-    ],
-    "存在最大数量\n不算初始每级都算": [
-      "city_area_gridResource"
-    ],
-    "采集操作提示key": [
-      "city_area_gridResource"
-    ],
-    "停止操作提示key": [
-      "city_area_gridResource"
-    ],
-    "采集行为图标\n填pathdataid": [
-      "city_area_gridResource"
-    ],
-    "SR 自动刷新类型\n0.种植资源（自动刷新）\n1.建筑生成资源（不自动刷新）\n用于区分建筑落地生成的资源与地图初始化生成的资源，前者不走自动刷新相关逻辑，所以需要用这个类型区分": [
-      "city_area_gridResource"
-    ],
-    "采集的每一份资源": [
-      "city_area_gridResource"
-    ],
-    "唯一ID 迷雾层": [
-      "city_area_gridFog"
-    ],
-    "起始偏移坐标X": [
-      "city_area_gridFog"
-    ],
-    "起始偏移坐标Y": [
-      "city_area_gridFog"
-    ],
-    "迷雾解锁条件": [
-      "city_area_gridFog"
-    ],
-    "该迷雾所在的格子\n": [
-      "city_area_gridFog"
-    ],
-    "是否生效": [
-      "city_area_gridFog"
-    ],
-    "寻路类型\n内城农民，NPC引用": [
-      "city_area_navigate"
-    ],
-    "可寻路层 gridBG": [
-      "city_area_navigate"
-    ],
-    "是否可跨越建筑": [
-      "city_area_navigate"
-    ],
-    "穿越锁定区域\ntrue无视解锁状态   false 只可行走解锁区域": [
-      "city_area_navigate"
-    ],
-    "数据": [
-      "default_sth_defaultSth"
+    "显示分组": [
+      "effect"
     ],
     "索引": [
+      "mail",
       "alliance_alliance_permission",
       "kingdomImmigration",
-      "mail",
-      "draw_card_discount",
-      "unlock_abtest",
-      "unlock_switch",
-      "alliance_flag",
       "combatStrength",
+      "draw_card_discount",
+      "draw_card_probability",
+      "unlock_abtest",
       "draw_card",
-      "draw_card_probability"
+      "alliance_flag",
+      "unlock_switch"
     ],
     "#策划备注列": [
-      "alliance_alliance_permission",
       "alliance_flag",
+      "alliance_alliance_permission",
       "draw_card"
     ],
     "卡池名称": [
@@ -1096,21 +905,12 @@
     "免费间隔时间": [
       "draw_card"
     ],
-    "免费间隔单位": [
-      "draw_card"
-    ],
     "奖励ID": [
-      "task",
       "recharge",
+      "task",
       "draw_card"
     ],
     "是否有10连保底": [
-      "draw_card"
-    ],
-    "10连稀有奖励": [
-      "draw_card"
-    ],
-    "10连保底奖励ID": [
       "draw_card"
     ],
     "固定第N此奖励类型": [
@@ -1129,9 +929,6 @@
       "draw_card"
     ],
     "每日抽取次数": [
-      "draw_card"
-    ],
-    "卡池界面图": [
       "draw_card"
     ],
     "卡池美术资源": [
@@ -1176,19 +973,19 @@
       "draw_card_probability"
     ],
     "Unnamed: 6": [
+      "draw_card_probability",
       "quality_quality_define",
-      "quality_quality_check",
-      "draw_card_probability"
+      "quality_quality_check"
     ],
     "Unnamed: 7": [
+      "draw_card_probability",
       "quality_quality_define",
       "skill_condition",
-      "quality_quality_check",
-      "draw_card_probability"
+      "quality_quality_check"
     ],
     "Unnamed: 8": [
-      "quality_quality_check",
-      "draw_card_probability"
+      "draw_card_probability",
+      "quality_quality_check"
     ],
     "Unnamed: 10": [
       "draw_card_probability"
@@ -1196,47 +993,11 @@
     "Unnamed: 14": [
       "draw_card_probability"
     ],
-    "#注释": [
-      "effect_autoEffect",
-      "model",
-      "model_model_pve",
-      "model_entity_attach"
-    ],
-    "开启条件": [
-      "effect_autoEffect"
-    ],
-    "关闭条件": [
-      "effect_autoEffect"
-    ],
-    "触发的effect": [
-      "effect_autoEffect"
-    ],
-    "持续时长(秒)": [
-      "effect_autoEffect"
-    ],
-    "buffAttr值": [
-      "effect_autoEffect"
-    ],
-    "组": [
-      "effect"
-    ],
-    "触发的buff": [
-      "effect"
-    ],
-    "客户端是否要显示": [
-      "effect"
-    ],
-    "effect名称，key_new表字段": [
-      "effect"
-    ],
-    "显示分组": [
-      "effect"
-    ],
     "品质": [
-      "player_info_head_bg",
-      "item",
+      "explore_task_exploreTask",
       "equip",
-      "explore_task_exploreTask"
+      "player_info_head_bg",
+      "item"
     ],
     "穿戴等级": [
       "equip"
@@ -1281,8 +1042,8 @@
       "equip_refine"
     ],
     "任务类型": [
-      "explore_task_exploreTask",
-      "task"
+      "task",
+      "explore_task_exploreTask"
     ],
     "任务名称": [
       "explore_task_exploreTask"
@@ -1297,9 +1058,6 @@
       "explore_task_exploreTask"
     ],
     "存在时间": [
-      "explore_task_exploreTask"
-    ],
-    "关联的模型ID": [
       "explore_task_exploreTask"
     ],
     "体力消耗": [
@@ -1317,175 +1075,18 @@
     "任务几率": [
       "explore_task_exploreTaskFresh"
     ],
-    "礼包界面显示方案": [
-      "gift_package"
-    ],
-    "礼包逻辑类型": [
-      "gift_package"
-    ],
-    "礼包推送条件": [
-      "gift_package"
-    ],
-    "礼包售价": [
-      "gift_package"
-    ],
-    "礼包上架时间": [
-      "gift_package"
-    ],
-    "礼包下架时间": [
-      "gift_package"
-    ],
-    "购买模式": [
-      "gift_package"
-    ],
-    "购买条件": [
-      "gift_package",
-      "shop_shop_item"
-    ],
-    "礼包组ID": [
-      "gift_package"
-    ],
-    "嵌套礼包ID组": [
-      "gift_package"
-    ],
-    "前置礼包ID": [
-      "gift_package"
-    ],
-    "礼包内容": [
-      "gift_package"
-    ],
-    "礼包销售渠道": [
-      "gift_package"
-    ],
-    "礼包有效性": [
-      "gift_package"
-    ],
     "礼包标题名字": [
-      "gift_package_gift_condition",
       "gift_package_gift_shoppage"
     ],
-    "礼包副标题": [
-      "gift_package_gift_shoppage"
-    ],
-    "礼包购买介绍": [
-      "gift_package_gift_shoppage"
-    ],
-    "礼包规则说明": [
-      "gift_package_gift_shoppage"
-    ],
-    "礼包展示类型": [
-      "gift_package_gift_shoppage"
-    ],
-    "商城显示排序": [
-      "gift_package_gift_shoppage"
-    ],
-    "礼包图标": [
-      "recharge",
-      "gift_package_gift_shoppage"
-    ],
-    "礼包封面界面名字": [
-      "gift_package_gift_shoppage"
-    ],
-    "礼包封面动态展示内容": [
-      "gift_package_gift_shoppage"
-    ],
-    "礼包展示道具": [
-      "gift_package_gift_shoppage"
-    ],
-    "礼包道具展示样式": [
-      "gift_package_gift_shoppage"
-    ],
-    "礼包投放渠道标识": [
-      "gift_package_gift_shoppage"
-    ],
-    "效果名称": [
-      "buff"
-    ],
-    "#效果描述": [
-      "buff"
-    ],
-    "效果描述": [
-      "buff"
-    ],
-    "效果图标": [
-      "buff"
-    ],
-    "效果逻辑ID": [
-      "buff"
-    ],
-    "是否仅逻辑效果": [
-      "buff"
-    ],
-    "效果等级": [
-      "buff"
-    ],
-    "效果作用兵种类型": [
-      "buff"
-    ],
-    "效果目标选择区域类型": [
-      "buff"
-    ],
-    "效果目标选择数量、类型": [
-      "buff"
-    ],
-    "效果目标选择器筛选规则": [
-      "buff"
-    ],
-    "参数数值类型": [
-      "buff"
-    ],
-    "效果参数数值": [
-      "buff"
-    ],
-    "效果数值条件修正": [
-      "buff"
-    ],
-    "效果持续回合数": [
-      "buff"
-    ],
-    "效果CD回合数": [
-      "buff"
-    ],
-    "效果触发条件参数配置": [
-      "buff"
-    ],
-    "技能效果生效几率": [
-      "buff"
-    ],
-    "叠加规则": [
-      "item",
-      "buff"
-    ],
-    "效果叠加参数": [
-      "buff"
-    ],
-    "是否可重置时间": [
-      "buff"
-    ],
-    "是否可驱散": [
-      "buff"
-    ],
-    "驻留效果中断条件": [
-      "buff"
-    ],
-    "效果互斥规则": [
-      "buff"
-    ],
-    "效果前端特效组": [
-      "buff"
-    ],
-    "效果文本显示类型": [
-      "buff"
-    ],
-    "效果tips文本": [
-      "buff"
+    "经验值": [
+      "lord_exp_lordExp"
     ],
     "报名赛季标识组": [
       "kvkSeason"
     ],
     "赛季名称": [
-      "kingdomImmigration",
-      "kvkSeason"
+      "kvkSeason",
+      "kingdomImmigration"
     ],
     "是否可轮空配置": [
       "kvkSeason"
@@ -1513,10 +1114,6 @@
     ],
     "成就组": [
       "kvkSeason_kvkScene"
-    ],
-    "经验值": [
-      "worldMonster",
-      "lord_exp_lordExp"
     ],
     "英雄名字": [
       "hero"
@@ -1555,19 +1152,12 @@
       "hero"
     ],
     "英雄天赋": [
-      "monsterTroop_monsterHero",
       "hero"
     ],
     "英雄主动技能ID": [
       "hero"
     ],
     "英雄被动技能ID": [
-      "hero"
-    ],
-    "英雄觉醒技能ID": [
-      "hero"
-    ],
-    "AI英雄行为树使用技能列表\n（副本用）": [
       "hero"
     ],
     "英雄技能升星与栏位配置": [
@@ -1616,14 +1206,14 @@
       "hero"
     ],
     "AI行为（bt_ai页签）": [
-      "zombie_survivor",
       "zombie",
-      "hero"
+      "hero",
+      "zombie_survivor"
     ],
     "RVO优先级（0~1）（>1锁定RVO）": [
-      "zombie_survivor",
       "zombie",
-      "hero"
+      "hero",
+      "zombie_survivor"
     ],
     "属性类型\n1.陆地\n2.天空\n3.海洋\n": [
       "hero"
@@ -1632,13 +1222,13 @@
       "hero"
     ],
     "等级": [
-      "science",
-      "building",
-      "vip",
       "alliance_science",
+      "science",
+      "vip",
+      "building",
       "hero_hero_level",
-      "alliance_science_alliance_skill",
-      "pve_character"
+      "pve_character",
+      "alliance_science_alliance_skill"
     ],
     "升下一级需要经验值": [
       "hero_hero_level"
@@ -1656,9 +1246,9 @@
       "hero_hero_star"
     ],
     "Unnamed: 5": [
-      "hero_hero_star",
       "quality_quality_define",
-      "quality_quality_check"
+      "quality_quality_check",
+      "hero_hero_star"
     ],
     "官职名称": [
       "kingdom_official",
@@ -1688,16 +1278,13 @@
     ],
     "任务id": [
       "task_task_chapter",
-      "milestone",
-      "task"
+      "task",
+      "milestone"
     ],
     "奖励目标主体": [
       "milestone"
     ],
     "奖励未完成描述": [
-      "milestone"
-    ],
-    "奖励领取限制": [
       "milestone"
     ],
     "功能解锁": [
@@ -1722,9 +1309,6 @@
       "milestone"
     ],
     "action按钮名": [
-      "milestone"
-    ],
-    "action 图标": [
       "milestone"
     ],
     "执行跳转": [
@@ -1755,12 +1339,8 @@
       "monsterTroop"
     ],
     "主将": [
-      "instanceTroop_instancePlayerTroop",
-      "monsterTroop"
-    ],
-    "副将": [
-      "instanceTroop_instancePlayerTroop",
-      "monsterTroop"
+      "monsterTroop",
+      "instanceTroop_instancePlayerTroop"
     ],
     "敌人具体配置": [
       "monsterTroop"
@@ -1779,23 +1359,41 @@
       "monsterTroop"
     ],
     "英雄ID": [
-      "monsterTroop_monsterHero",
-      "instanceTroop_instancePlayerHero"
+      "instanceTroop_instancePlayerHero",
+      "monsterTroop_monsterHero"
     ],
     "英雄等级": [
-      "monsterTroop_monsterHero",
-      "instanceTroop_instancePlayerHero"
+      "instanceTroop_instancePlayerHero",
+      "monsterTroop_monsterHero"
     ],
     "英雄星级": [
-      "monsterTroop_monsterHero",
-      "instanceTroop_instancePlayerHero"
-    ],
-    "英雄技能等级": [
-      "monsterTroop_monsterHero",
-      "instanceTroop_instancePlayerHero"
-    ],
-    "英雄装备": [
+      "instanceTroop_instancePlayerHero",
       "monsterTroop_monsterHero"
+    ],
+    "自增id": [
+      "normal_rank",
+      "building_npc",
+      "client_rank_alliance_rank",
+      "city_node_type_cityNodeTypeConf"
+    ],
+    "排行榜名字": [
+      "normal_rank",
+      "client_rank_alliance_rank"
+    ],
+    "提示标题": [
+      "normal_rank",
+      "client_rank_alliance_rank"
+    ],
+    "提示内容": [
+      "normal_rank",
+      "client_rank_alliance_rank"
+    ],
+    "排行项文字": [
+      "normal_rank",
+      "client_rank_alliance_rank"
+    ],
+    "关联排行榜": [
+      "normal_rank"
     ],
     "模板": [
       "mail"
@@ -1803,16 +1401,10 @@
     "标题": [
       "mail"
     ],
-    "邮件图标": [
-      "mail"
-    ],
     "内容": [
       "mail"
     ],
-    "奖励插图": [
-      "mail"
-    ],
-    "达成条件": [
+    "#策划备注2": [
       "mail"
     ],
     "动态模板标题组件内容配置": [
@@ -1849,9 +1441,9 @@
       "mail_mailTemplate"
     ],
     "序号": [
-      "worldMonster",
       "mail_dynamicbuff",
-      "mail_bufftemplate"
+      "mail_bufftemplate",
+      "worldMonster"
     ],
     "部队增益名字文本": [
       "mail_bufftemplate"
@@ -1871,49 +1463,18 @@
     "战斗日志左侧不需要显示的buff逻辑ID": [
       "mail_dynamicbuff"
     ],
-    "自增id": [
-      "client_rank_alliance_rank",
-      "normal_rank",
-      "city_node_type_cityNodeTypeConf",
-      "building_npc"
-    ],
-    "排行榜名字": [
-      "client_rank_alliance_rank",
-      "normal_rank"
-    ],
-    "提示标题": [
-      "client_rank_alliance_rank",
-      "normal_rank"
-    ],
-    "提示内容": [
-      "client_rank_alliance_rank",
-      "normal_rank"
-    ],
-    "排行项文字": [
-      "client_rank_alliance_rank",
-      "normal_rank"
-    ],
-    "关联排行榜": [
-      "normal_rank"
-    ],
-    "#攻击目标": [
-      "powerconsume_powerConsume"
-    ],
-    "消耗体力": [
-      "powerconsume_powerConsume"
-    ],
     "描述，获取途径": [
-      "player_info_head",
-      "player_info_head_bg"
+      "player_info_head_bg",
+      "player_info_head"
     ],
     "图标，\n路径：Assets/Arts/ui/player_head": [
-      "player_info_head",
-      "player_info_head_bg"
+      "player_info_head_bg",
+      "player_info_head"
     ],
     "分组": [
       "point_transform_pointTransform",
-      "kingdom_official",
       "recharge",
+      "kingdom_official",
       "task"
     ],
     "积分类型": [
@@ -1930,6 +1491,12 @@
     ],
     "积分": [
       "point_transform_pointTransform"
+    ],
+    "#攻击目标": [
+      "powerconsume_powerConsume"
+    ],
+    "消耗体力": [
+      "powerconsume_powerConsume"
     ],
     "排行数据源类型": [
       "rank"
@@ -1950,9 +1517,6 @@
       "rank"
     ],
     "更新缓存时间": [
-      "rank"
-    ],
-    "显示信息": [
       "rank"
     ],
     "显示信息格式化": [
@@ -1976,72 +1540,6 @@
     "奖励id": [
       "rank_rank_reward"
     ],
-    "奖励邮件": [
-      "rank_rank_reward"
-    ],
-    "配方ID": [
-      "recipe"
-    ],
-    "配方名称": [
-      "recipe"
-    ],
-    "配方描述": [
-      "recipe"
-    ],
-    "配方ICON": [
-      "recipe"
-    ],
-    "配方子类型": [
-      "recipe"
-    ],
-    "配方解锁条件": [
-      "recipe"
-    ],
-    "配方产物与数量": [
-      "recipe"
-    ],
-    "消耗原材料与数量": [
-      "recipe"
-    ],
-    "消耗资源与数量": [
-      "recipe"
-    ],
-    "生产时间": [
-      "recipe"
-    ],
-    "配方使用规则": [
-      "recipe"
-    ],
-    "配方是否激活": [
-      "recipe"
-    ],
-    "配方索引ID": [
-      "recipe_recipeIndex"
-    ],
-    "配方功能类型": [
-      "recipe_recipeIndex"
-    ],
-    "配方列表": [
-      "recipe_recipeIndex"
-    ],
-    "规则ID": [
-      "recipe_recipeRule"
-    ],
-    "配方产物目的地": [
-      "recipe_recipeRule"
-    ],
-    "配方消耗资源来源": [
-      "recipe_recipeRule"
-    ],
-    "配方等级组步长": [
-      "recipe_recipeRule"
-    ],
-    "配方使用类型": [
-      "recipe_recipeRule"
-    ],
-    "配方未激活时是否显示": [
-      "recipe_recipeRule"
-    ],
     "主键（唯一标识）": [
       "lodConfig",
       "sceneManager"
@@ -2058,9 +1556,182 @@
     "场景LOD配置ID": [
       "sceneManager"
     ],
+    "备注（GM平台读取字段）": [
+      "reward"
+    ],
+    "直接给资源": [
+      "reward"
+    ],
+    "掉落类型": [
+      "reward"
+    ],
+    "道具必掉": [
+      "reward"
+    ],
+    "随机道具": [
+      "reward"
+    ],
+    "兵必掉落": [
+      "reward"
+    ],
+    "英雄必掉落": [
+      "reward"
+    ],
+    "英雄随机掉落": [
+      "reward"
+    ],
+    "effect奖励": [
+      "reward"
+    ],
+    "奖励跳转": [
+      "reward"
+    ],
+    "采集速度": [
+      "resource_Resinfo",
+      "alliance_building"
+    ],
+    "生成速度": [
+      "resource_Resinfo"
+    ],
+    "定时刷新": [
+      "resource_Resinfo"
+    ],
+    "残矿消失时间": [
+      "resource_Resinfo"
+    ],
+    "兑换比例": [
+      "resource_Resinfo"
+    ],
+    "科技条件": [
+      "resource_Resinfo"
+    ],
+    "大地图资源模型": [
+      "resource_Resinfo"
+    ],
+    "大地图标志ICON": [
+      "resource_Resinfo",
+      "alliance_building"
+    ],
+    "采集资源界面icon": [
+      "resource_Resinfo"
+    ],
+    "优先展示buff": [
+      "resource_Resinfo"
+    ],
+    "资源类型": [
+      "resource_ResRefresh"
+    ],
+    "资源等级": [
+      "resource_ResRefresh"
+    ],
+    "最大采集": [
+      "resource_ResRefresh"
+    ],
+    "资源类型刷新权重": [
+      "resource_ResRules"
+    ],
+    "资源等级刷新权重": [
+      "resource_ResRules"
+    ],
+    "资源最大刷新数量": [
+      "resource_ResRules"
+    ],
+    "联盟资源田类型": [
+      "resource_ResRules"
+    ],
+    "联盟资源田数量": [
+      "resource_ResRules"
+    ],
+    "编号 E_RESOURCE_TYPE": [
+      "resource"
+    ],
+    "名字Key": [
+      "resource_counter_resource",
+      "item",
+      "resource"
+    ],
+    "描述Key": [
+      "resource_counter_resource",
+      "item",
+      "resource"
+    ],
+    "#描述，": [
+      "resource_counter_resource",
+      "resource"
+    ],
+    "道具图标": [
+      "resource_counter_resource",
+      "resource"
+    ],
+    "小图标": [
+      "resource_counter_resource",
+      "resource"
+    ],
+    "品质（背景框）": [
+      "resource_counter_resource",
+      "resource"
+    ],
+    "SR ：是否有资源上限，默认值为0": [
+      "resource"
+    ],
+    "资源转换比例": [
+      "resource"
+    ],
+    "资源转换类型(个人联盟之间转换关系)": [
+      "resource"
+    ],
+    "显示优先级(越小越靠前)": [
+      "resource"
+    ],
+    "获取途径": [
+      "resource"
+    ],
+    "获取途径.1": [
+      "resource"
+    ],
+    "获取途径.2": [
+      "resource"
+    ],
+    "获取途径.3": [
+      "resource"
+    ],
+    "获取途径.4": [
+      "resource"
+    ],
+    "获取途径.5": [
+      "resource"
+    ],
+    "获取途径.6": [
+      "resource"
+    ],
+    "获取途径.7": [
+      "resource"
+    ],
+    "获取途径.8": [
+      "resource"
+    ],
+    "获取途径.9": [
+      "resource"
+    ],
+    "获取途径.10": [
+      "resource"
+    ],
+    "获取途径.11": [
+      "resource"
+    ],
+    "获取途径.12": [
+      "resource"
+    ],
+    "编号PBECounterType": [
+      "resource_counter_resource"
+    ],
+    "#名字": [
+      "resource_counter_resource",
+      "item"
+    ],
     "礼包说明": [
-      "recharge_rechargeShow",
-      "kingdomGift"
+      "kingdomGift",
+      "recharge_rechargeShow"
     ],
     "分页": [
       "recharge_rechargeShow"
@@ -2087,8 +1758,8 @@
       "recharge"
     ],
     "是否开放": [
-      "building",
       "recharge",
+      "building",
       "shop"
     ],
     "分组规则": [
@@ -2142,13 +1813,6 @@
     "玩家购买限制": [
       "recharge"
     ],
-    "任务描述": [
-      "recharge",
-      "task"
-    ],
-    "任务描述规则": [
-      "recharge"
-    ],
     "重复出现": [
       "recharge"
     ],
@@ -2159,7 +1823,10 @@
       "recharge"
     ],
     "礼包名称": [
-      "kingdomGift",
+      "recharge",
+      "kingdomGift"
+    ],
+    "礼包图标": [
       "recharge"
     ],
     "礼包描述": [
@@ -2168,19 +1835,7 @@
     "礼包价值": [
       "recharge"
     ],
-    "标题图标": [
-      "recharge"
-    ],
-    "背景": [
-      "recharge"
-    ],
-    "标题名称": [
-      "recharge"
-    ],
     "组参数": [
-      "recharge"
-    ],
-    "跳转相关": [
       "recharge"
     ],
     "人民币": [
@@ -2188,195 +1843,6 @@
     ],
     "美元": [
       "recharge_rechargeProduct"
-    ],
-    "备注（GM平台读取字段）": [
-      "reward"
-    ],
-    "直接给资源": [
-      "reward"
-    ],
-    "掉落类型": [
-      "reward"
-    ],
-    "道具必掉": [
-      "reward"
-    ],
-    "随机道具": [
-      "reward"
-    ],
-    "兵必掉落": [
-      "reward"
-    ],
-    "兵随机掉落": [
-      "reward"
-    ],
-    "英雄必掉落": [
-      "reward"
-    ],
-    "英雄随机掉落": [
-      "reward"
-    ],
-    "effect奖励": [
-      "reward"
-    ],
-    "奖励跳转": [
-      "reward"
-    ],
-    "采集速度": [
-      "resource_Resinfo",
-      "alliance_building"
-    ],
-    "生成速度": [
-      "resource_Resinfo"
-    ],
-    "定时刷新": [
-      "resource_Resinfo"
-    ],
-    "残矿消失时间": [
-      "resource_Resinfo"
-    ],
-    "兑换比例": [
-      "resource_Resinfo"
-    ],
-    "科技条件": [
-      "resource_Resinfo"
-    ],
-    "大地图资源模型": [
-      "resource_Resinfo"
-    ],
-    "大地图标志ICON": [
-      "resource_Resinfo",
-      "alliance_building"
-    ],
-    "采集资源界面icon": [
-      "resource_Resinfo"
-    ],
-    "优先展示buff": [
-      "resource_Resinfo"
-    ],
-    "资源类型": [
-      "resource_ResRefresh"
-    ],
-    "最大采集": [
-      "resource_ResRefresh"
-    ],
-    "资源类型刷新权重": [
-      "resource_ResRules"
-    ],
-    "资源等级刷新权重": [
-      "resource_ResRules"
-    ],
-    "资源最大刷新数量": [
-      "resource_ResRules"
-    ],
-    "联盟资源田类型": [
-      "resource_ResRules"
-    ],
-    "联盟资源田数量": [
-      "resource_ResRules"
-    ],
-    "编号 E_RESOURCE_TYPE": [
-      "resource"
-    ],
-    "名字Key": [
-      "item",
-      "resource",
-      "resource_counter_resource"
-    ],
-    "#名字": [
-      "item",
-      "alliance_buff_attribute",
-      "resource",
-      "resource_counter_resource"
-    ],
-    "描述Key": [
-      "item",
-      "resource",
-      "resource_counter_resource"
-    ],
-    "#描述，": [
-      "resource",
-      "resource_counter_resource"
-    ],
-    "道具图标": [
-      "resource",
-      "resource_counter_resource"
-    ],
-    "小图标": [
-      "resource",
-      "resource_counter_resource"
-    ],
-    "品质（背景框）": [
-      "resource",
-      "resource_counter_resource"
-    ],
-    "SR ：是否有资源上限，默认值为0": [
-      "resource"
-    ],
-    "资源转换比例": [
-      "resource"
-    ],
-    "资源转换类型(个人联盟之间转换关系)": [
-      "resource"
-    ],
-    "显示优先级(越小越靠前)": [
-      "resource"
-    ],
-    "获取途径": [
-      "item",
-      "resource",
-      "resource_counter_resource"
-    ],
-    "获取途径.1": [
-      "resource",
-      "resource_counter_resource"
-    ],
-    "获取途径.2": [
-      "resource",
-      "resource_counter_resource"
-    ],
-    "获取途径.3": [
-      "resource",
-      "resource_counter_resource"
-    ],
-    "获取途径.4": [
-      "resource",
-      "resource_counter_resource"
-    ],
-    "获取途径.5": [
-      "resource",
-      "resource_counter_resource"
-    ],
-    "获取途径.6": [
-      "resource",
-      "resource_counter_resource"
-    ],
-    "获取途径.7": [
-      "resource",
-      "resource_counter_resource"
-    ],
-    "获取途径.8": [
-      "resource",
-      "resource_counter_resource"
-    ],
-    "获取途径.9": [
-      "resource",
-      "resource_counter_resource"
-    ],
-    "获取途径.10": [
-      "resource",
-      "resource_counter_resource"
-    ],
-    "获取途径.11": [
-      "resource",
-      "resource_counter_resource"
-    ],
-    "获取途径.12": [
-      "resource",
-      "resource_counter_resource"
-    ],
-    "编号PBECounterType": [
-      "resource_counter_resource"
     ],
     "搜索名称": [
       "search"
@@ -2391,8 +1857,8 @@
       "search"
     ],
     "是否显示": [
-      "alliance_alliance_permission",
-      "search"
+      "search",
+      "alliance_alliance_permission"
     ],
     "显示顺序": [
       "search"
@@ -2412,9 +1878,6 @@
     "热更后是否强制刷新商品": [
       "shop"
     ],
-    "开放条件": [
-      "shop"
-    ],
     "玩家条件": [
       "shop"
     ],
@@ -2428,9 +1891,6 @@
       "shop"
     ],
     "是否是个人商店": [
-      "shop"
-    ],
-    "自动刷新期内手动刷新次数及消耗（个人商店有效）": [
       "shop"
     ],
     "显示排序": [
@@ -2469,10 +1929,7 @@
     "购买价格": [
       "shop_shop_item"
     ],
-    "购买描述": [
-      "shop_shop_item"
-    ],
-    "购买描述规则": [
+    "购买条件": [
       "shop_shop_item"
     ],
     "是否上架": [
@@ -2480,21 +1937,6 @@
     ],
     "出现权重": [
       "shop_shop_item"
-    ],
-    "逻辑运算": [
-      "skill_condition"
-    ],
-    "逻辑参数": [
-      "skill_condition"
-    ],
-    "条件筛选类型": [
-      "skill_condition"
-    ],
-    "值条件判定方法": [
-      "skill_condition"
-    ],
-    "值参数对比条件": [
-      "skill_condition"
     ],
     "ID，约定\ngroup*1000+level": [
       "science"
@@ -2504,19 +1946,19 @@
     ],
     "组名": [
       "alliance_science",
+      "science",
       "atlas_group",
-      "alliance_science_alliance_skill",
-      "science"
+      "alliance_science_alliance_skill"
     ],
     "最高等级": [
-      "alliance_science_alliance_skill",
       "alliance_science",
-      "science"
+      "science",
+      "alliance_science_alliance_skill"
     ],
     "说明": [
-      "alliance_science_alliance_skill",
+      "science",
       "alliance_building",
-      "science"
+      "alliance_science_alliance_skill"
     ],
     "图标，Game_Prefab/texture/sciences": [
       "science"
@@ -2531,9 +1973,9 @@
       "science"
     ],
     "加成属性名【客户端】": [
-      "alliance_science_alliance_skill",
       "alliance_science",
-      "science"
+      "science",
+      "alliance_science_alliance_skill"
     ],
     "加成属性值【客户端】\n正数表示百分比\n负数表示直接数值": [
       "science"
@@ -2550,13 +1992,25 @@
     "升级时间消耗（s）": [
       "science"
     ],
+    "逻辑运算": [
+      "skill_condition"
+    ],
+    "逻辑参数": [
+      "skill_condition"
+    ],
+    "条件筛选类型": [
+      "skill_condition"
+    ],
+    "值条件判定方法": [
+      "skill_condition"
+    ],
+    "值参数对比条件": [
+      "skill_condition"
+    ],
     "主键（社交关系id）": [
       "socialRelation"
     ],
     "副本服匹配实体参数配置引用分页名": [
-      "socialRelation"
-    ],
-    "副本服匹配实体参数配置id": [
       "socialRelation"
     ],
     "#战斗类型描述": [
@@ -2620,21 +2074,35 @@
     "图片名称": [
       "video_gift_videoGift"
     ],
+    "大本等级限制": [
+      "video_point_videoPoint"
+    ],
+    "参数": [
+      "video_point_videoPoint",
+      "pve_config_zombie_config",
+      "map_battle_battle_const",
+      "model_map_formation"
+    ],
+    "间隔数值": [
+      "video_point_videoPoint"
+    ],
+    "触发几率（%）": [
+      "video_point_videoPoint"
+    ],
+    "礼包id": [
+      "video_point_videoPoint"
+    ],
+    "奖励系数": [
+      "video_point_videoPoint"
+    ],
     "主键（功能id）": [
       "unlock_functionSwitch"
     ],
     "#说明": [
       "unlock_functionSwitch",
-      "guide_config_guide_dialog",
       "unlock"
     ],
     "条件解锁id": [
-      "unlock_functionSwitch"
-    ],
-    "开关表id": [
-      "unlock_functionSwitch"
-    ],
-    "abtest开关id": [
       "unlock_functionSwitch"
     ],
     "#功能名称": [
@@ -2652,36 +2120,11 @@
     "客户端最高版本号": [
       "unlock_switch"
     ],
-    "关闭的渠道": [
-      "unlock_switch"
-    ],
     "下限（包含）": [
       "unlock_abtest"
     ],
     "上限（包含）": [
       "unlock_abtest"
-    ],
-    "参数": [
-      "pve_config_zombie_config",
-      "unlock_abtest",
-      "map_battle_battle_const",
-      "video_point_videoPoint",
-      "model_map_formation"
-    ],
-    "大本等级限制": [
-      "video_point_videoPoint"
-    ],
-    "间隔数值": [
-      "video_point_videoPoint"
-    ],
-    "触发几率（%）": [
-      "video_point_videoPoint"
-    ],
-    "礼包id": [
-      "video_point_videoPoint"
-    ],
-    "奖励系数": [
-      "video_point_videoPoint"
     ],
     "前置条件": [
       "task"
@@ -2690,6 +2133,9 @@
       "task"
     ],
     "扩展字段": [
+      "task"
+    ],
+    "任务描述": [
       "task"
     ],
     "任务名称，key_new里的key": [
@@ -2746,9 +2192,6 @@
     "vip特权": [
       "vip"
     ],
-    "开关ID": [
-      "vip"
-    ],
     "名称，key_new表id": [
       "worldMonster"
     ],
@@ -2776,15 +2219,9 @@
       "instanceMonster",
       "worldMonster"
     ],
-    "大地图模型资源": [
-      "worldMonster"
-    ],
     "缩放": [
-      "worldMonster",
+      "model_entity_attach",
       "client_show_client_effect",
-      "model_entity_attach"
-    ],
-    "推荐语": [
       "worldMonster"
     ],
     "#策划用": [
@@ -2807,10 +2244,6 @@
     ],
     "活动掉落的id": [
       "worldMonster_monsterExtraDrop"
-    ],
-    "权限名称": [
-      "alliance_alliance_permission",
-      "alliance_flag"
     ],
     "配置的数组值，图片直接填写图片名，颜色填写颜色值（如红色:#ff0000ff, 最后两位是透明度）": [
       "alliance_flag"
@@ -3067,8 +2500,8 @@
       "alliance_shop_alliance_shopItem"
     ],
     "排序": [
-      "hud_config_personal_config",
-      "alliance_shop_alliance_shopItem"
+      "alliance_shop_alliance_shopItem",
+      "hud_config_personal_config"
     ],
     "图集宽度": [
       "atlas_group"
@@ -3106,15 +2539,12 @@
     "是否启用自带相机": [
       "cinema_config"
     ],
-    "背景音乐名称": [
-      "cinema_config"
-    ],
     "ID,约定\ngroup*1000+level\n ": [
       "alliance_science"
     ],
     "#备注名称\n\n": [
-      "alliance_science_alliance_skill",
-      "alliance_science"
+      "alliance_science",
+      "alliance_science_alliance_skill"
     ],
     "\n\n页签": [
       "alliance_science"
@@ -3135,8 +2565,8 @@
       "alliance_science"
     ],
     "作用效果": [
-      "alliance_science_alliance_skill",
-      "alliance_science"
+      "alliance_science",
+      "alliance_science_alliance_skill"
     ],
     "联盟作用效果": [
       "alliance_science"
@@ -3145,16 +2575,16 @@
       "alliance_science"
     ],
     "捐献资源类型": [
-      "alliance_science_alliance_skill",
-      "alliance_science"
+      "alliance_science",
+      "alliance_science_alliance_skill"
     ],
     "捐献资源数量": [
-      "alliance_science_alliance_skill",
-      "alliance_science"
+      "alliance_science",
+      "alliance_science_alliance_skill"
     ],
     "捐献获得id": [
-      "alliance_science_alliance_skill",
-      "alliance_science"
+      "alliance_science",
+      "alliance_science_alliance_skill"
     ],
     "集满所需科技点数": [
       "alliance_science"
@@ -3206,14 +2636,14 @@
     ],
     "#描述": [
       "client_show_client_bullet",
-      "entity_menu_entity_menu_item",
-      "trigger_config",
-      "item",
-      "zombie_bt_ai",
       "client_show_client_effect",
-      "map_battle_battle_formation",
+      "entity_menu",
+      "item",
       "map_item_popup",
-      "entity_menu"
+      "map_battle_battle_formation",
+      "zombie_bt_ai",
+      "entity_menu_entity_menu_item",
+      "trigger_config"
     ],
     "资源名": [
       "client_show_client_effect"
@@ -3233,12 +2663,6 @@
     "是否是循环特效": [
       "client_show_client_effect"
     ],
-    "延迟播放时间【毫秒】": [
-      "client_show_client_effect"
-    ],
-    "延迟释放时间【毫秒】": [
-      "client_show_client_effect"
-    ],
     "持续时间【毫秒】": [
       "client_show_client_effect"
     ],
@@ -3248,28 +2672,16 @@
     "飞行速度\n默认15m/s": [
       "client_show_client_bullet"
     ],
-    "随机命中位置偏移半径，当它有值时，飞行目标位置初始化后就不再修正了。【单位：毫米】": [
-      "client_show_client_bullet"
-    ],
-    "飞行跟随目标时间。\n单位：毫秒\n超过这个时间后，弹幕不再跟随目标\nfly_type == 4起效": [
-      "client_show_client_bullet"
-    ],
     "飞行距离【米】\n目前fly_type==5起效": [
       "client_show_client_bullet"
     ],
     "水平移动模式\n0：匀速\n1：加速\n2：减速\n注意不影响命中总时长，命中总时长=实际距离/fly_speed": [
       "client_show_client_bullet"
     ],
-    "弹幕半径，pveSkill起效": [
-      "client_show_client_bullet"
-    ],
     "命中目标后停留时间【ms】": [
       "client_show_client_bullet"
     ],
     "特效资源名\nAssets/Game_Prefab/prefab/fx目录底下，不带后缀": [
-      "client_show_client_bullet"
-    ],
-    "音效资源名\nAssets/Game_Prefab/audio目录底下，不带后缀": [
       "client_show_client_bullet"
     ],
     "当flyType=1时起效，抛物线的幅度。": [
@@ -3290,84 +2702,16 @@
     "命中，偏移位置\nx|y|z": [
       "client_show_client_bullet"
     ],
-    "命中特效资源名": [
-      "client_show_client_bullet"
-    ],
-    "命中音效资源名": [
-      "client_show_client_bullet"
-    ],
-    "预警特效": [
-      "client_show_client_bullet"
-    ],
-    "关键值【唯一】，暂时没有使用": [
-      "hud_config",
-      "hud_config_bookmark_config"
-    ],
-    "样式：要克隆的节点名，在main_panel.prefab中可以查找到。": [
-      "hud_config"
-    ],
-    "显示区域\n0：底部菜单下\n1：顶部菜单上": [
-      "hud_config"
-    ],
-    "显示权重，越大显示越前面": [
-      "hud_config"
-    ],
-    "#按钮名字，key_new表key【注释】": [
-      "hud_config"
-    ],
-    "按钮名字，key_new表key": [
-      "hud_config"
-    ],
-    "icon图标名，Assets/Arts/ui/mainui": [
-      "hud_config"
-    ],
-    "icon尺寸，如果不配置，就是SetNativeSize【图片实际尺寸】": [
-      "hud_config",
-      "entity_menu_entity_menu_item"
-    ],
-    "样式：\n0：联盟菜单\n1：个人书签\n": [
-      "hud_config_bookmark_config"
-    ],
-    "标签名字，key_new表key": [
-      "hud_config_bookmark_config"
-    ],
-    "icon图标名，Assets/Arts/ui/bookmark": [
-      "hud_config_bookmark_config"
-    ],
-    "沙河地图上特效资源": [
-      "hud_config_bookmark_config"
-    ],
     "关键值【唯一】": [
-      "map_item_popup",
-      "entity_menu",
       "entity_menu_entity_menu_item",
-      "hud_config_personal_config"
-    ],
-    "#按钮名字备注": [
-      "hud_config_personal_config"
-    ],
-    "按钮名称key_new": [
-      "hud_config_personal_config"
-    ],
-    "按钮icon\n(没有正式资源，暂时使用buff文件夹下面的图标)": [
-      "hud_config_personal_config"
-    ],
-    "按钮解锁条件；未解锁按钮置灰，点击提示锁定原因(这个功能之后统筹到系统开启功能之中)": [
-      "hud_config_personal_config"
-    ],
-    "点击触发客户端事件": [
-      "hud_config_personal_config"
-    ],
-    "功能开关(关闭时不显示按钮)": [
-      "hud_config_personal_config"
+      "entity_menu",
+      "hud_config_personal_config",
+      "map_item_popup"
     ],
     "菜单按钮，对应entity_menu_item中的key": [
       "entity_menu"
     ],
     "基础信息对应ui节点名字，对应的脚本名：xxx_item，多个'_item', 如：\nbuilding_title_item": [
-      "entity_menu"
-    ],
-    "基础信息ui是否常驻": [
       "entity_menu"
     ],
     "底部菜单位置偏移\nx,y,z(水平，垂直，前后)": [
@@ -3392,6 +2736,9 @@
       "entity_menu"
     ],
     "icon图标名，Assets/Arts/ui/bubble，细节看logic_lua实现细节": [
+      "entity_menu_entity_menu_item"
+    ],
+    "icon尺寸，如果不配置，就是SetNativeSize【图片实际尺寸】": [
       "entity_menu_entity_menu_item"
     ],
     "icon图标名，Assets/Arts/ui/bubble，细节看logic_lua实现细节.1": [
@@ -3436,17 +2783,78 @@
     "默认加载配置": [
       "entity_menu_entity_menu_config"
     ],
-    "内城场景": [
-      "entity_menu_entity_menu_config"
-    ],
-    "世界沙盘场景": [
-      "entity_menu_entity_menu_config"
-    ],
     "GVG副本场景": [
       "entity_menu_entity_menu_config"
     ],
     "塞罗利副本场景": [
       "entity_menu_entity_menu_config"
+    ],
+    "关键值【唯一】，暂时没有使用": [
+      "hud_config_bookmark_config",
+      "hud_config"
+    ],
+    "样式：要克隆的节点名，在main_panel.prefab中可以查找到。": [
+      "hud_config"
+    ],
+    "显示区域\n0：底部菜单下\n1：顶部菜单上": [
+      "hud_config"
+    ],
+    "显示权重，越大显示越前面": [
+      "hud_config"
+    ],
+    "#按钮名字，key_new表key【注释】": [
+      "hud_config"
+    ],
+    "按钮名字，key_new表key": [
+      "hud_config"
+    ],
+    "icon图标名，Assets/Arts/ui/mainui": [
+      "hud_config"
+    ],
+    "样式：\n0：联盟菜单\n1：个人书签\n": [
+      "hud_config_bookmark_config"
+    ],
+    "标签名字，key_new表key": [
+      "hud_config_bookmark_config"
+    ],
+    "icon图标名，Assets/Arts/ui/bookmark": [
+      "hud_config_bookmark_config"
+    ],
+    "沙河地图上特效资源": [
+      "hud_config_bookmark_config"
+    ],
+    "#按钮名字备注": [
+      "hud_config_personal_config"
+    ],
+    "按钮名称key_new": [
+      "hud_config_personal_config"
+    ],
+    "按钮icon\n(没有正式资源，暂时使用buff文件夹下面的图标)": [
+      "hud_config_personal_config"
+    ],
+    "按钮解锁条件；未解锁按钮置灰，点击提示锁定原因(这个功能之后统筹到系统开启功能之中)": [
+      "hud_config_personal_config"
+    ],
+    "点击触发客户端事件": [
+      "hud_config_personal_config"
+    ],
+    "功能开关(关闭时不显示按钮)": [
+      "hud_config_personal_config"
+    ],
+    "LOD应用层级范围": [
+      "lodConfig"
+    ],
+    "高度": [
+      "lodConfig"
+    ],
+    "相机FOV": [
+      "lodConfig"
+    ],
+    "相机近处裁剪": [
+      "lodConfig"
+    ],
+    "相机远处裁剪": [
+      "lodConfig"
     ],
     "步骤组ID\n这个字段暂时没用": [
       "guide_config"
@@ -3473,12 +2881,6 @@
       "guide_config"
     ],
     "自动关闭时间，【秒float】，一般用于非强制引导": [
-      "guide_config"
-    ],
-    "引导UI节点隐藏不算引导失败【有些引导UI触发引导时是隐藏的，这时就需要设置true】": [
-      "guide_config"
-    ],
-    "引导阶段是否屏蔽视频奖励弹窗": [
       "guide_config"
     ],
     "guide_type=1：界面名字\nguide_type=2：建筑GroupId\nguide_type=3：剧情对话ID【guide_dialog】\nguide_type=4：视频名字，xxx.mp4【目录:StreamingAssets/video】\nguide_type=5：x,y,z,w,h，如：\"100,0.45,96,4,4\"": [
@@ -3520,24 +2922,6 @@
     "等待主城": [
       "guide_config"
     ],
-    "是否锁住地图拖拽，场景实体UI操作时，防止误操作拖拽动图": [
-      "guide_config"
-    ],
-    "下一步执行条件触发条件，如果有限制，则会挂起，等条件满足才会触发下一步，guide_type==0有效\nCheckTrigger.lua": [
-      "guide_config"
-    ],
-    "旁白tips文字内容": [
-      "guide_config"
-    ],
-    "旁白tips偏移x": [
-      "guide_config"
-    ],
-    "旁白tips偏移y": [
-      "guide_config"
-    ],
-    "引导小手方位\n0：右下方【默认】\n1：右上方\n2：左上方\n3：左下方": [
-      "guide_config"
-    ],
     "#说话人": [
       "guide_config_guide_dialog"
     ],
@@ -3559,29 +2943,11 @@
     "对话内容\nkey_new.xlsx": [
       "guide_config_guide_dialog"
     ],
-    "语音文件\nGame_Prefab/audio中音乐文件名字，不带后缀": [
-      "guide_config_guide_dialog"
-    ],
     "说完之后是否移走，不移走，就半透明到后面去": [
       "guide_config_guide_dialog"
     ],
     "下一句对话": [
       "guide_config_guide_dialog"
-    ],
-    "LOD应用层级范围": [
-      "lodConfig"
-    ],
-    "高度": [
-      "lodConfig"
-    ],
-    "相机FOV": [
-      "lodConfig"
-    ],
-    "相机近处裁剪": [
-      "lodConfig"
-    ],
-    "相机远处裁剪": [
-      "lodConfig"
     ],
     "子面板": [
       "map_item_popup"
@@ -3676,49 +3042,6 @@
     "模型换算区间.19": [
       "map_battle_battle_formation"
     ],
-    "界面名称【与资源名一致】": [
-      "panel_config"
-    ],
-    "层级": [
-      "panel_config"
-    ],
-    "互斥挡住同层级UI；挡住的其他UI会被挪开": [
-      "panel_config"
-    ],
-    "触发UI资源释放": [
-      "panel_config"
-    ],
-    "是否常驻": [
-      "pre_load",
-      "panel_config"
-    ],
-    "是否调用转圈loading": [
-      "panel_config"
-    ],
-    "是否考虑刘海屏适配，弹出非全屏界面请选FALSE，绝大部分不要刘海适配": [
-      "panel_config"
-    ],
-    "关闭多久执行删除【秒】": [
-      "panel_config"
-    ],
-    "打开音效名": [
-      "panel_config"
-    ],
-    "关闭音效名": [
-      "panel_config"
-    ],
-    "是否没有LuaBehaviour": [
-      "panel_config"
-    ],
-    "ui的sortingLayer是否自定义，不受PanelLayer影响": [
-      "panel_config"
-    ],
-    "UI打开动画效果\n1:由小到大": [
-      "panel_config"
-    ],
-    "是否关闭主界面": [
-      "panel_config"
-    ],
     "#desc": [
       "msg_config"
     ],
@@ -3749,8 +3072,51 @@
     "资源名字，务必不要重复预加载": [
       "pre_load"
     ],
+    "是否常驻": [
+      "panel_config",
+      "pre_load"
+    ],
     "是否需要实例化，model类起效": [
       "pre_load"
+    ],
+    "界面名称【与资源名一致】": [
+      "panel_config"
+    ],
+    "层级": [
+      "panel_config"
+    ],
+    "互斥挡住同层级UI；挡住的其他UI会被挪开": [
+      "panel_config"
+    ],
+    "触发UI资源释放": [
+      "panel_config"
+    ],
+    "是否调用转圈loading": [
+      "panel_config"
+    ],
+    "是否考虑刘海屏适配，弹出非全屏界面请选FALSE，绝大部分不要刘海适配": [
+      "panel_config"
+    ],
+    "关闭多久执行删除【秒】": [
+      "panel_config"
+    ],
+    "打开音效名": [
+      "panel_config"
+    ],
+    "关闭音效名": [
+      "panel_config"
+    ],
+    "是否没有LuaBehaviour": [
+      "panel_config"
+    ],
+    "ui的sortingLayer是否自定义，不受PanelLayer影响": [
+      "panel_config"
+    ],
+    "UI打开动画效果\n1:由小到大": [
+      "panel_config"
+    ],
+    "是否关闭主界面": [
+      "panel_config"
     ],
     "模型资源【Assets/Game_Prefab/prefab/model】": [
       "model"
@@ -3776,13 +3142,7 @@
     "资源优先级【性能优化用到】\n<0，表示极可能快的加载，尽量少配置": [
       "model"
     ],
-    "染色颜色【材质的FlagColr字段参数】\n255|255|255，默认白色": [
-      "model"
-    ],
     "溶解颜色字段": [
-      "model"
-    ],
-    "用作模型头顶气泡位置偏移": [
       "model"
     ],
     "改模型是否是ecs": [
@@ -3792,12 +3152,6 @@
       "model_model_pve"
     ],
     "模型碰撞体高度，单位：米（PVE）": [
-      "model_model_pve"
-    ],
-    "旋转模式设置（PVE）\n0:水平旋转\n1:水平垂直旋转 \n2:不可旋转 ": [
-      "model_model_pve"
-    ],
-    "垂直旋转模式看向目标时中心Y的偏移（PVE）": [
       "model_model_pve"
     ],
     "可选休眠动画播放（PVE）": [
@@ -3833,64 +3187,18 @@
     "挂载后移动动画修改": [
       "model_entity_attach"
     ],
-    "挂载后站立动画修改": [
-      "model_entity_attach"
-    ],
-    "#备注说明": [
-      "pve_skill_skill_buff",
-      "pve_skill",
-      "pve_skill_pve_passive_effect",
-      "quality_quality_check",
-      "pve_skill_skill_action",
-      "skill_client_skill_show",
-      "pve_skill_skill_target_action"
-    ],
-    "释放技能时朝向目标": [
-      "skill_client_skill_show"
-    ],
-    "技能自动释放表现cd【ms】\n有的系统有效": [
-      "skill_client_skill_show"
-    ],
-    "技能表现时间，现在先配置动作持续时间【ms】": [
-      "skill_client_skill_show"
-    ],
-    "动作爆发点时间【ms】【动作人员告之】\n近战：砍中的时间点\n远程：释放技能的时间点": [
-      "skill_client_skill_show"
-    ],
-    "技能动作名": [
-      "skill_client_skill_show"
-    ],
-    "发起特效，对应client/skill_show.xlsx中【effect】中配置": [
-      "skill_client_skill_show"
-    ],
-    "发起音效": [
-      "skill_client_skill_show"
-    ],
-    "弹幕配置id，对应client_show.xlsx中client_bullet中配置": [
-      "skill_client_skill_show"
-    ],
-    "命中特效，对应client_show.xlsx中【client_effect中的配置": [
-      "pve_skill_hit_effect",
-      "skill_client_skill_show"
-    ],
-    "命中音效": [
-      "skill_client_skill_show"
-    ],
-    "步骤类型\n等级条件：CondLv:等级，例：CondLv:1\n科技解锁等级：CondScience:组Id,等级，例：CondScience:103,1\n任务可领时：FinishTask:任务ID，例：FinishTask:2\n建筑存在性：BuildingExist:组ID，例：BuildingExist:101": [
-      "trigger_config"
-    ],
-    "执行动作-> action表的ID": [
-      "trigger_config"
-    ],
-    "触发Times\n0：满足条件就触发，不限次\n>0：可触发的总次数": [
-      "trigger_config"
-    ],
-    "每次游戏触发一次后是否移除，不再触发，断线重连次数会清掉": [
-      "trigger_config"
-    ],
     "键值ID": [
       "quality_quality_define",
       "quality_quality_check"
+    ],
+    "#备注说明": [
+      "pve_skill_pve_passive_effect",
+      "pve_skill_skill_buff",
+      "skill_client_skill_show",
+      "quality_quality_check",
+      "pve_skill_skill_target_action",
+      "pve_skill_skill_action",
+      "pve_skill"
     ],
     "Unnamed: 2": [
       "quality_quality_define",
@@ -3934,24 +3242,6 @@
     "最多显示特效数量": [
       "quality_quality_define"
     ],
-    "设备名字": [
-      "quality_quality_device"
-    ],
-    "默认机型配置，\n1.高配\n2.中配\n3.低配\n4.超低配\n必须配1、2、3、4中一种，默认高配": [
-      "quality_quality_device"
-    ],
-    "高配对应quality_define中的ID，默认1": [
-      "quality_quality_device"
-    ],
-    "中配对应quality_define中的ID，默认2": [
-      "quality_quality_device"
-    ],
-    "低配对应quality_define中的ID，默认3": [
-      "quality_quality_device"
-    ],
-    "超低配对应quality_define中的ID，默认4": [
-      "quality_quality_device"
-    ],
     "音乐开启": [
       "quality_d_system_setting"
     ],
@@ -3964,13 +3254,38 @@
     "音效音量": [
       "quality_d_system_setting"
     ],
+    "释放技能时朝向目标": [
+      "skill_client_skill_show"
+    ],
+    "技能自动释放表现cd【ms】\n有的系统有效": [
+      "skill_client_skill_show"
+    ],
+    "技能表现时间，现在先配置动作持续时间【ms】": [
+      "skill_client_skill_show"
+    ],
+    "动作爆发点时间【ms】【动作人员告之】\n近战：砍中的时间点\n远程：释放技能的时间点": [
+      "skill_client_skill_show"
+    ],
+    "技能动作名": [
+      "skill_client_skill_show"
+    ],
+    "发起特效，对应client/skill_show.xlsx中【effect】中配置": [
+      "skill_client_skill_show"
+    ],
+    "弹幕配置id，对应client_show.xlsx中client_bullet中配置": [
+      "skill_client_skill_show"
+    ],
+    "命中特效，对应client_show.xlsx中【client_effect中的配置": [
+      "skill_client_skill_show",
+      "pve_skill_hit_effect"
+    ],
     "基础魔力值": [
       "pve_character"
     ],
     "基础移动速度": [
-      "zombie_survivor",
       "zombie",
-      "pve_character"
+      "pve_character",
+      "zombie_survivor"
     ],
     "基础旋转速度": [
       "pve_character"
@@ -3993,23 +3308,29 @@
     "AI行为树": [
       "pve_character"
     ],
-    "武器ICON": [
-      "weapon"
+    "步骤类型\n等级条件：CondLv:等级，例：CondLv:1\n科技解锁等级：CondScience:组Id,等级，例：CondScience:103,1\n任务可领时：FinishTask:任务ID，例：FinishTask:2\n建筑存在性：BuildingExist:组ID，例：BuildingExist:101": [
+      "trigger_config"
     ],
-    "武器模型": [
-      "weapon"
+    "执行动作-> action表的ID": [
+      "trigger_config"
     ],
-    "武器种别": [
-      "weapon"
+    "触发Times\n0：满足条件就触发，不限次\n>0：可触发的总次数": [
+      "trigger_config"
     ],
-    "武器类型": [
-      "weapon"
+    "每次游戏触发一次后是否移除，不再触发，断线重连次数会清掉": [
+      "trigger_config"
     ],
-    "武器品质": [
-      "weapon"
+    "相机高度": [
+      "pve_config_pve_info_config"
     ],
-    "武器星级": [
-      "weapon"
+    "相机初始化角度": [
+      "pve_config_pve_info_config"
+    ],
+    "相机初始化FOV": [
+      "pve_config_pve_info_config"
+    ],
+    "游戏FOV范围": [
+      "pve_config_pve_info_config"
     ],
     "武器战斗力，显示值": [
       "weapon"
@@ -4056,21 +3377,6 @@
     "防御等级成长值": [
       "weapon"
     ],
-    "特效ID（client_show）": [
-      "weapon"
-    ],
-    "相机高度": [
-      "pve_config_pve_info_config"
-    ],
-    "相机初始化角度": [
-      "pve_config_pve_info_config"
-    ],
-    "相机初始化FOV": [
-      "pve_config_pve_info_config"
-    ],
-    "游戏FOV范围": [
-      "pve_config_pve_info_config"
-    ],
     "gvg流程规则配置id": [
       "gvgProcessConfig"
     ],
@@ -4109,96 +3415,6 @@
     ],
     "AI行为树配置": [
       "instanceMonster"
-    ],
-    "能力组别\n1 - 防御型\n2 - 近战输出\n3 - 远程输出\n4 - 辅助型": [
-      "zombie_survivor",
-      "zombie"
-    ],
-    "兵种品质": [
-      "zombie_survivor",
-      "zombie"
-    ],
-    "显示星级": [
-      "zombie_survivor",
-      "zombie"
-    ],
-    "战斗力，显示值": [
-      "zombie_survivor",
-      "zombie"
-    ],
-    "激活后模型显示颜色（临时方案）\n填写RGB值": [
-      "zombie_survivor"
-    ],
-    "显示模型(临时字段，敌人模型)": [
-      "zombie_survivor"
-    ],
-    "装备武器（weapon表）": [
-      "zombie_survivor",
-      "zombie"
-    ],
-    "幸存者主动与被动技能列表（pve_skill）": [
-      "zombie_survivor"
-    ],
-    "最大san值": [
-      "zombie_survivor"
-    ],
-    "队形站位优先级（玩家控制友军）": [
-      "zombie_survivor"
-    ],
-    "特点描述": [
-      "zombie"
-    ],
-    "是否是boss": [
-      "zombie"
-    ],
-    "拥有技能列表(到了CD就放)": [
-      "zombie"
-    ],
-    "类型\n1 - 一次性增益\n2 - 持续增益\n3 - 一次性陷阱\n4 - 持续陷阱": [
-      "zombie_trap_item"
-    ],
-    "拥有技能列表（都是只能对自己放的技能）": [
-      "zombie_trap_item"
-    ],
-    "基础数值": [
-      "zombie_trap_item"
-    ],
-    "行为树资源名字": [
-      "zombie_bt_ai"
-    ],
-    "范围内不会跟随主将距离": [
-      "zombie_bt_ai"
-    ],
-    "随机巡逻（失控）半径": [
-      "zombie_bt_ai"
-    ],
-    "警戒距离": [
-      "zombie_bt_ai"
-    ],
-    "san值获取倍率（负数为关闭san获取）": [
-      "zombie_bt_ai"
-    ],
-    "ap怒气值获取倍率（负数为关闭怒气获取）": [
-      "zombie_bt_ai"
-    ],
-    "san触发buff": [
-      "zombie_bt_ai"
-    ],
-    "san值触发buff持续时间\n【毫秒】": [
-      "zombie_bt_ai"
-    ],
-    "常驻buff": [
-      "zombie_bt_ai"
-    ],
-    "技能详情字典": [
-      "pve_skill"
-    ],
-    "技能升级预览字典": [
-      "pve_skill"
-    ],
-    "技能tips参数 client only": [
-      "pve_skill",
-      "skill"
     ],
     "技能类型\n0：普攻\n1：主动（可沉默）\n2：被动\n3：觉醒技能": [
       "pve_skill"
@@ -4245,12 +3461,6 @@
     "过程特效\ndelay1,effectID1|…\ndelay：【int，毫秒】\neffect：对应client_show.xlsx中【client_effect中的配置": [
       "pve_skill"
     ],
-    "音效资源名\ndelay1,audioName1|…\ndelay：【int，毫秒】\naudioName：音效资源名": [
-      "pve_skill"
-    ],
-    "特殊效果，震屏，慢动作等等【待实现】\ndelay,type:param1&param2&…\n1：震屏,param1：X轴震屏；param2：Y轴震屏，param3：Z轴震屏\n如：100,1:0&2,0.1,2,0.1,0.05\n    /// Param格式：param1,param2,param3,param4,...\n    /// param1：幅度【float】\n    /// param2：周期时长【float】\n    /// param3：周期次数【int】【不配置，默认1】\n    /// param4：每个周期幅度变化值【float】【不配置，默认0】\n    /// param5：每个周期周期时长变化值【float】【不配置，默认0】\n    /// param6：震屏曲线类型：EaseFunctions.cs -> Ease，如：‘QuadIn’，‘BackIn’，‘BackOut’等，【不配置，默认Linear】": [
-      "pve_skill"
-    ],
     "筛选区域类型\n0.目标\n1.自己\n2.以自己为圆心\n3.以目标为圆心\n4.以自己为扇形\n5.以目标为扇形\n6.以自己为起点建立矩形\n7.以目标为起点建立矩形\n8.以自己与目标之间建立矩形": [
       "pve_skill_skill_target_action"
     ],
@@ -4263,9 +3473,6 @@
     "筛选区域参数2": [
       "pve_skill_skill_target_action"
     ],
-    "筛选区域参数3": [
-      "pve_skill_skill_target_action"
-    ],
     "筛选数量限制，0无限制\n技能等级决定用哪个，1级用第1个，2级用第2个，依次类推，对应等级找不到就算0，表示不限制数量": [
       "pve_skill_skill_target_action"
     ],
@@ -4275,25 +3482,13 @@
     "筛选生死限制\n0：筛选存活单位\n1：筛选死亡单位": [
       "pve_skill_skill_target_action"
     ],
-    "筛选目标的特殊状态\n1：眩晕\n2：沉默\n3：定身\n4：无敌\n5：预留tag1\n6：预留tag2": [
-      "pve_skill_skill_target_action"
-    ],
     "执行逻辑": [
       "pve_skill_skill_target_action"
     ],
     "弹幕配置，对应client_show.xlsx中client_bullet中配置，不是真正的弹幕\n如果有弹幕，弹幕命中后才真正执行actionList": [
       "pve_skill_skill_target_action"
     ],
-    "弹幕命中延迟【ms】\n有弹幕且飞行类型为fly_type==4起效": [
-      "pve_skill_skill_target_action"
-    ],
-    "弹幕逻辑类型【bullet存在时有效】\n0.筛选好目标后飞弹幕，命中后执行actionList【适用必中点对点表现弹幕】\n1.对锁定目标或位置飞弹幕，命中后执行筛选，筛选出来的所有新目标执行actionList【使用砸陨石等】\n2.对锁定目标或位置飞弹幕，过程中弹幕触碰到目标满足area_mask条件执行actionList": [
-      "pve_skill_skill_target_action"
-    ],
     "技能筛选目标\ngroupType": [
-      "pve_skill_skill_target_action"
-    ],
-    "海陆空筛选目标PropertyType": [
       "pve_skill_skill_target_action"
     ],
     "类型\ntype的具体逻辑见#说明分页": [
@@ -4301,19 +3496,16 @@
     ],
     "参数1": [
       "building",
-      "pve_skill_skill_buff",
-      "pve_skill_skill_action",
-      "item"
+      "item",
+      "pve_skill_skill_action"
     ],
     "参数2": [
       "building",
-      "pve_skill_skill_buff",
-      "pve_skill_skill_action",
-      "item"
+      "item",
+      "pve_skill_skill_action"
     ],
     "参数3": [
       "building",
-      "pve_skill_skill_buff",
       "pve_skill_skill_action"
     ],
     "参数4": [
@@ -4334,25 +3526,13 @@
     "#备注说明，可以播放特效、音效以及特效": [
       "pve_skill_hit_effect"
     ],
-    "音效资源名": [
-      "pve_skill_hit_effect"
-    ],
-    "特殊效果，震屏，慢动作等等，待实现\ntype:param1&param2&…\n1：震屏,param1：X轴震屏；param2：Y轴震屏，param3：Z轴震屏\n如：1:0&2,0.1,2,0.1,0.05\n    /// Param格式：param1,param2,param3,param4,...\n    /// param1：幅度【float】\n    /// param2：周期时长【float】\n    /// param3：周期次数【int】【不配置，默认1】\n    /// param4：每个周期幅度变化值【float】【不配置，默认0】\n    /// param5：每个周期周期时长变化值【float】【不配置，默认0】\n    /// param6：震屏曲线类型：EaseFunctions.cs -> Ease，如：‘QuadIn’，‘BackIn’，‘BackOut’等，【不配置，默认Linear】": [
-      "pve_skill_hit_effect"
-    ],
     "buff图标/battle_buff": [
       "pve_skill_skill_buff"
     ],
     "buff类型\n1.一段时间结算一次\n2.属性修改\n3.伤害护盾\n4.薄葬\n5.BUFF时间到移除时执行targetActions\n6.嘲讽": [
       "pve_skill_skill_buff"
     ],
-    "buff有益类型，移除需要\n0：有害buff\n1：有益buff\n2：不可非自然移除buff": [
-      "pve_skill_skill_buff"
-    ],
     "组ID\n同组，权重>=就覆盖": [
-      "pve_skill_skill_buff"
-    ],
-    "组-权重": [
       "pve_skill_skill_buff"
     ],
     "buff重叠方式\n0.时长不变\n1.时长重置\n2.时长累加": [
@@ -4361,61 +3541,87 @@
     "最大叠加层数": [
       "pve_skill_skill_buff"
     ],
-    "实体表现特效，对应client_show.xlsx中【client_effect中的配置": [
-      "pve_skill_skill_buff"
-    ],
-    "附加免疫状态\n1：眩晕\n2：沉默\n3：定身\n4：无敌\n5：失控\n6：占据\n7：不触发陷阱\n8：免疫速度影响BUFF\n附加之后，对应tag将附加不上": [
-      "pve_skill_skill_buff"
-    ],
     "附加状态\n1：眩晕\n2：沉默\n3：定身\n4：无敌\n5：失控\n6：占据\n7：不触发陷阱\n8：免疫速度影响BUFF\n如果附加效果被免疫，整个buff将移除": [
       "pve_skill_skill_buff"
     ],
     "属性修改列表\ntype1,changeV1|type2,changeV2|…\ntype:类型，见#说明的属性定义\nchangeV:变化值": [
       "pve_skill_skill_buff"
     ],
-    "【间歇起效】开始起效时间【毫秒】buff_type=1时起效": [
-      "pve_skill_skill_buff"
-    ],
-    "【间歇起效】起效间隔【毫秒】\nbuff_type=1时起效": [
-      "pve_skill_skill_buff"
-    ],
     "【间歇起效】每次起效执行的逻辑：目标行为列表，对应skill_target_action种的配置\n因为有目标筛选，就可以做类似使周围目标受伤的效果\nbuff_type=1时起效": [
       "pve_skill_skill_buff"
     ],
-    "target_actions作用时buff拥有者表现，对应sheet<hit_effect>的内容": [
-      "pve_skill_skill_buff"
+    "能力组别\n1 - 防御型\n2 - 近战输出\n3 - 远程输出\n4 - 辅助型": [
+      "zombie",
+      "zombie_survivor"
     ],
-    "法球效果，触发CD\n【int，毫秒】": [
-      "pve_skill_skill_buff"
+    "兵种品质": [
+      "zombie",
+      "zombie_survivor"
     ],
-    "触发方式\n1：使用技能触发\n2：受击触发\n3：buff叠加触发\n4：击杀触发\n5：死亡触发": [
-      "pve_skill_skill_buff"
+    "显示星级": [
+      "zombie",
+      "zombie_survivor"
     ],
-    "触发概率\n【int，万分比】": [
-      "pve_skill_skill_buff"
+    "战斗力，显示值": [
+      "zombie",
+      "zombie_survivor"
     ],
-    "触发skill_target_action的id数组，可以触发AOE效果": [
-      "pve_skill_skill_buff"
+    "激活后模型显示颜色（临时方案）\n填写RGB值": [
+      "zombie_survivor"
     ],
-    "trigger_target_actions作用时拥有者表现，对应sheet<hit_effect>的内容": [
-      "pve_skill_skill_buff"
+    "显示模型(临时字段，敌人模型)": [
+      "zombie_survivor"
     ],
-    "绑定BUFF ID": [
-      "pve_skill_pve_passive_effect"
+    "装备武器（weapon表）": [
+      "zombie",
+      "zombie_survivor"
+    ],
+    "幸存者主动与被动技能列表（pve_skill）": [
+      "zombie_survivor"
+    ],
+    "最大san值": [
+      "zombie_survivor"
+    ],
+    "队形站位优先级（玩家控制友军）": [
+      "zombie_survivor"
+    ],
+    "特点描述": [
+      "zombie"
+    ],
+    "是否是boss": [
+      "zombie"
+    ],
+    "拥有技能列表(到了CD就放)": [
+      "zombie"
+    ],
+    "类型\n1 - 一次性增益\n2 - 持续增益\n3 - 一次性陷阱\n4 - 持续陷阱": [
+      "zombie_trap_item"
+    ],
+    "拥有技能列表（都是只能对自己放的技能）": [
+      "zombie_trap_item"
+    ],
+    "基础数值": [
+      "zombie_trap_item"
+    ],
+    "行为树资源名字": [
+      "zombie_bt_ai"
+    ],
+    "范围内不会跟随主将距离": [
+      "zombie_bt_ai"
+    ],
+    "随机巡逻（失控）半径": [
+      "zombie_bt_ai"
+    ],
+    "警戒距离": [
+      "zombie_bt_ai"
+    ],
+    "ap怒气值获取倍率（负数为关闭怒气获取）": [
+      "zombie_bt_ai"
     ],
     "副本奖励主键": [
       "instanceReward"
     ],
-    "副本组章节奖励": [
-      "instanceReward"
-    ],
-    "评分奖励": [
-      "instanceReward"
-    ],
     "PVP副本获胜方参与者奖励邮件": [
-      "instanceReward"
-    ],
-    "PVP副本获胜方未参与者奖励邮件": [
       "instanceReward"
     ],
     "PVP副本战败方参与者奖励邮件": [
@@ -4455,17 +3661,11 @@
     "副本解锁条件": [
       "instances"
     ],
-    "开启副本消耗": [
-      "instances"
-    ],
     "副本首通奖励": [
       "instances"
     ],
     "重复通关奖励": [
       "pve_pve_level",
-      "instances"
-    ],
-    "外部奖励": [
       "instances"
     ],
     "副本关卡玩法JSON文件": [
@@ -4496,8 +3696,8 @@
       "instancesGroup"
     ],
     "副本玩法规则ID": [
-      "instanceRule_instanceGameRule",
-      "instancesGroup"
+      "instancesGroup",
+      "instanceRule_instanceGameRule"
     ],
     "副本关联排行榜": [
       "instancesGroup"
@@ -4510,61 +3710,6 @@
     ],
     "副本战损规则配置id": [
       "instancesGroup"
-    ],
-    "技能ID": [
-      "instanceSkill"
-    ],
-    "#技能说明": [
-      "skill",
-      "instanceSkill"
-    ],
-    "技能名称": [
-      "skill",
-      "kingdomSkill",
-      "instanceSkill",
-      "kingdomBuff"
-    ],
-    "技能描述": [
-      "skill",
-      "instanceSkill"
-    ],
-    "技能图标": [
-      "skill",
-      "kingdomSkill",
-      "instanceSkill",
-      "skill_skill_level"
-    ],
-    "技能类型": [
-      "instanceSkill"
-    ],
-    "技能解锁条件": [
-      "instanceSkill"
-    ],
-    "技能冷却时间": [
-      "skill",
-      "instanceSkill"
-    ],
-    "通用技能资源消耗": [
-      "instanceSkill"
-    ],
-    "技能使用道具消耗": [
-      "instanceSkill"
-    ],
-    "技能最大释放范围半径": [
-      "instanceSkill"
-    ],
-    "技能施放方式": [
-      "instanceSkill"
-    ],
-    "技能前端特效组": [
-      "skill",
-      "instanceSkill"
-    ],
-    "技能仇恨系数": [
-      "instanceSkill"
-    ],
-    "技能效果与效果数值配置": [
-      "instanceSkill"
     ],
     "副本玩家部队使用规则ID": [
       "instanceRule_instanceTroopRule"
@@ -4594,9 +3739,6 @@
       "instanceRule_instanceGameRule"
     ],
     "副本内可使用道具列表": [
-      "instanceRule_instanceGameRule"
-    ],
-    "副本内可展示但是发消息只能游戏服使用": [
       "instanceRule_instanceGameRule"
     ],
     "背包格子上限": [
@@ -4641,13 +3783,7 @@
     "统计项描述": [
       "instanceRule_instanceStatistic"
     ],
-    "统计项ICON": [
-      "instanceRule_instanceStatistic"
-    ],
     "统计数据类型": [
-      "instanceRule_instanceStatistic"
-    ],
-    "统计数据来源": [
       "instanceRule_instanceStatistic"
     ],
     "统计方式": [
@@ -4677,19 +3813,10 @@
     "玩家角色描述": [
       "instancesTag_rpgRole"
     ],
-    "玩家角色自定义主动技能组1": [
-      "instancesTag_rpgRole"
-    ],
     "主动技能组1最大可选数量": [
       "instancesTag_rpgRole"
     ],
-    "玩家角色自定义主动技能组2": [
-      "instancesTag_rpgRole"
-    ],
     "主动技能组2最大可选数量": [
-      "instancesTag_rpgRole"
-    ],
-    "玩家角色自定义主动技能组3": [
       "instancesTag_rpgRole"
     ],
     "主动技能组3最大可选数量": [
@@ -4710,8 +3837,21 @@
     "玩家角色专属Buff（配置技能来释放buff）": [
       "instancesTag_rpgRole"
     ],
-    "玩家角色专属技能": [
-      "instancesTag_rpgRole"
+    "描述": [
+      "instancesTag_gvgJob"
+    ],
+    "部队显示等级": [
+      "instanceTroop_instancePlayerTroop"
+    ],
+    "副将": [
+      "instanceTroop_instancePlayerTroop"
+    ],
+    "具体配置": [
+      "instanceTroop_instancePlayerSoldier",
+      "instanceTroop_instancePlayerTroop"
+    ],
+    "英雄技能等级": [
+      "instanceTroop_instancePlayerHero"
     ],
     "是否可邀请队员": [
       "matchingEntityConfig_matchingTeamConfig"
@@ -4727,13 +3867,6 @@
     ],
     "报名权限联盟位阶": [
       "matchingEntityConfig_matchingAllianceConfig"
-    ],
-    "部队显示等级": [
-      "instanceTroop_instancePlayerTroop"
-    ],
-    "具体配置": [
-      "instanceTroop_instancePlayerTroop",
-      "instanceTroop_instancePlayerSoldier"
     ],
     "队伍匹配规则ID": [
       "matchingEntityRule_matchingTeamRule"
@@ -4757,32 +3890,32 @@
       "matchingEntityRule_matchingTeamRule"
     ],
     "进入玩家的匹配规则matchAssess表的group": [
-      "matchingEntityRule_matchingTeamRule",
-      "matchingEntityRule_matchingAllianceRule"
+      "matchingEntityRule_matchingAllianceRule",
+      "matchingEntityRule_matchingTeamRule"
     ],
     "匹配关键数据类型": [
-      "matchingEntityRule_matchingTeamRule",
-      "matchingEntityRule_matchingAllianceRule"
+      "matchingEntityRule_matchingAllianceRule",
+      "matchingEntityRule_matchingTeamRule"
     ],
     "关键数据匹配范围(上下浮动)": [
-      "matchingEntityRule_matchingTeamRule",
-      "matchingEntityRule_matchingAllianceRule"
+      "matchingEntityRule_matchingAllianceRule",
+      "matchingEntityRule_matchingTeamRule"
     ],
     "关键数据浮动变更时间": [
-      "matchingEntityRule_matchingTeamRule",
-      "matchingEntityRule_matchingAllianceRule"
+      "matchingEntityRule_matchingAllianceRule",
+      "matchingEntityRule_matchingTeamRule"
     ],
     "匹配服务器的范围": [
-      "matchingEntityRule_matchingTeamRule",
-      "matchingEntityRule_matchingAllianceRule"
+      "matchingEntityRule_matchingAllianceRule",
+      "matchingEntityRule_matchingTeamRule"
     ],
     "玩家匹配区间调整": [
-      "matchingEntityRule_matchingTeamRule",
-      "matchingEntityRule_matchingAllianceRule"
+      "matchingEntityRule_matchingAllianceRule",
+      "matchingEntityRule_matchingTeamRule"
     ],
     "玩家匹配区间调整时间": [
-      "matchingEntityRule_matchingTeamRule",
-      "matchingEntityRule_matchingAllianceRule"
+      "matchingEntityRule_matchingAllianceRule",
+      "matchingEntityRule_matchingTeamRule"
     ],
     "联盟匹配规则ID": [
       "matchingEntityRule_matchingAllianceRule"
@@ -4809,83 +3942,22 @@
       "matchingEntityRule_matchAssess"
     ],
     "facial": [
+      "key_new_task_key_new",
+      "key_new_alliance_key_new",
       "key_new_ui_key_new",
       "key_new",
       "key_new_instance_key_new",
-      "key_new_alliance_key_new",
-      "key_new_task_key_new",
-      "key_new_map_key_new"
-    ],
-    "是否使用多语言字符串编译解析": [
-      "key_new_ui_key_new",
-      "key_new",
-      "key_new_instance_key_new",
-      "key_new_alliance_key_new",
-      "key_new_task_key_new",
-      "key_new_map_key_new"
-    ],
-    "#说明描述": [
-      "key_new_ui_key_new",
-      "key_new",
-      "key_new_instance_key_new",
-      "key_new_alliance_key_new",
-      "key_new_task_key_new",
       "key_new_map_key_new"
     ],
     "中文": [
+      "key_new_task_key_new",
+      "key_new_alliance_key_new",
       "key_new_ui_key_new",
       "key_new",
       "key_new_instance_key_new",
-      "key_new_alliance_key_new",
-      "key_new_task_key_new",
       "key_new_map_key_new"
     ],
-    "英文": [
-      "key_new_ui_key_new",
-      "key_new",
-      "key_new_instance_key_new",
-      "key_new_alliance_key_new",
-      "key_new_task_key_new",
-      "key_new_map_key_new"
-    ],
-    "日语": [
-      "key_new_ui_key_new",
-      "key_new",
-      "key_new_instance_key_new",
-      "key_new_alliance_key_new",
-      "key_new_task_key_new",
-      "key_new_map_key_new"
-    ],
-    "繁體": [
-      "key_new_ui_key_new",
-      "key_new",
-      "key_new_instance_key_new",
-      "key_new_alliance_key_new",
-      "key_new_task_key_new",
-      "key_new_map_key_new"
-    ],
-    "韩语": [
-      "key_new_ui_key_new",
-      "key_new",
-      "key_new_instance_key_new",
-      "key_new_alliance_key_new",
-      "key_new_task_key_new",
-      "key_new_map_key_new"
-    ],
-    "俄语": [
-      "key_new_ui_key_new",
-      "key_new",
-      "key_new_instance_key_new",
-      "key_new_alliance_key_new",
-      "key_new_task_key_new",
-      "key_new_map_key_new"
-    ],
-    "土耳其语": [
-      "key_new_ui_key_new",
-      "key_new",
-      "key_new_instance_key_new",
-      "key_new_alliance_key_new",
-      "key_new_task_key_new",
+    "#说明描述": [
       "key_new_map_key_new"
     ],
     "战斗力限制": [
@@ -4897,6 +3969,11 @@
     ],
     "持续时间（s）": [
       "kingdomBuff"
+    ],
+    "技能名称": [
+      "kingdomSkill",
+      "kingdomBuff",
+      "skill"
     ],
     "技能说明": [
       "kingdomSkill",
@@ -4933,27 +4010,6 @@
     "赛季说明": [
       "kingdomImmigration"
     ],
-    "技能消耗钻石数量": [
-      "kingdomSkill"
-    ],
-    "技能cd（s）": [
-      "kingdomSkill"
-    ],
-    "效果id列表": [
-      "kingdomSkill"
-    ],
-    "效果持续时间（s）": [
-      "kingdomSkill"
-    ],
-    "技能生效区域类型": [
-      "kingdomSkill"
-    ],
-    "技能生效目标类型": [
-      "kingdomSkill"
-    ],
-    "技能生效目标数量": [
-      "kingdomSkill"
-    ],
     "组别": [
       "kingspower"
     ],
@@ -4974,6 +4030,32 @@
     ],
     "移民调整": [
       "kingspower"
+    ],
+    "技能图标": [
+      "skill_skill_level",
+      "kingdomSkill",
+      "skill"
+    ],
+    "技能消耗钻石数量": [
+      "kingdomSkill"
+    ],
+    "技能cd（s）": [
+      "kingdomSkill"
+    ],
+    "效果id列表": [
+      "kingdomSkill"
+    ],
+    "效果持续时间（s）": [
+      "kingdomSkill"
+    ],
+    "技能生效区域类型": [
+      "kingdomSkill"
+    ],
+    "技能生效目标类型": [
+      "kingdomSkill"
+    ],
+    "技能生效目标数量": [
+      "kingdomSkill"
     ],
     "权限": [
       "kingdom_official"
@@ -5002,9 +4084,6 @@
     "首通奖励": [
       "pve_pve_level"
     ],
-    "额外奖励": [
-      "pve_pve_level"
-    ],
     "PVE关卡文件ID": [
       "pve_pve_level"
     ],
@@ -5020,9 +4099,6 @@
     "星级关联条件": [
       "pve_pve_level"
     ],
-    "关卡UI配置方案": [
-      "pve_pve_level"
-    ],
     "昼夜": [
       "pve_pve_level"
     ],
@@ -5033,8 +4109,8 @@
       "pve_pve_level"
     ],
     "主标题文本key": [
-      "pve_pve_chapter",
-      "pve_pve_diff"
+      "pve_pve_diff",
+      "pve_pve_chapter"
     ],
     "副标题文本key": [
       "pve_pve_chapter"
@@ -5084,6 +4160,9 @@
     "锁定图标": [
       "pve_pve_diff"
     ],
+    "权限名称": [
+      "alliance_alliance_permission"
+    ],
     "R1权限": [
       "alliance_alliance_permission"
     ],
@@ -5120,9 +4199,6 @@
     "道具等级": [
       "item"
     ],
-    "叠加数量": [
-      "item"
-    ],
     "是否能在背包里使用": [
       "item"
     ],
@@ -5138,7 +4214,10 @@
     "道具消失时间（h）": [
       "item"
     ],
-    "技能升级预览描述": [
+    "#技能说明": [
+      "skill"
+    ],
+    "技能描述": [
       "skill"
     ],
     "技能类别": [
@@ -5147,16 +4226,10 @@
     "技能模式": [
       "skill"
     ],
-    "客户端PVE技能ID": [
-      "skill"
-    ],
     "技能解锁星级": [
       "skill"
     ],
-    "觉醒技能条件": [
-      "skill"
-    ],
-    "觉醒目标技能配置": [
+    "技能冷却时间": [
       "skill"
     ],
     "技能限制回合数": [
@@ -5180,14 +4253,11 @@
     "技能效果等级数值配置": [
       "skill"
     ],
-    "战斗公式技能修正系数": [
+    "技能前端特效组": [
       "skill"
     ],
-    "技能升级预览描述（客户端）": [
-      "skill_skill_level"
-    ],
-    "技能tips参数（客户端）": [
-      "skill_skill_level"
+    "战斗公式技能修正系数": [
+      "skill"
     ],
     "技能升级消耗": [
       "skill_skill_level"
@@ -5229,6 +4299,9 @@
       "building"
     ],
     "建造图标": [
+      "building"
+    ],
+    "点击音效": [
       "building"
     ],
     "icon高度": [
@@ -5323,7 +4396,16 @@
     ],
     "建造时是否使用地基": [
       "building_buildingGroup"
+    ],
+    "是否使用多语言字符串编译解析": [
+      "key_new"
+    ],
+    "英文": [
+      "key_new"
+    ],
+    "繁體": [
+      "key_new"
     ]
   },
-  "updated_at": "2026-03-08T20:28:54.762242"
+  "updated_at": "2026-03-08T23:58:50.793086"
 }
