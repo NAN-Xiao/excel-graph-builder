@@ -20,20 +20,22 @@ class BuildConfig:
     max_workers: int = 4
     max_sample_rows: int = 2000
     max_sample_cols: int = 200
-    max_rows_per_table: int = 50000  # 超过此行数的表截断采样
-    skip_sheet_prefixes: tuple = ('#',)  # 跳过这些前缀的 sheet（备注/备份）
+    max_rows_per_table: int = 50000
+    skip_sheet_prefixes: tuple = ('#',)
 
     # Phase 1: 包含度检测
-    containment_threshold: float = 0.85
+    containment_threshold: float = 0.80
     overlap_threshold: float = 0.75
     min_sample_size: int = 3
-    small_pk_threshold: int = 100  # PK 列唯一值少于此数时触发碰撞惩罚
+    small_pk_threshold: int = 50
+    min_intersection: int = 5
+    max_per_table_pair: int = 2
 
     # Phase 2: 缩写挖掘
     abbrev_confidence_threshold: float = 0.8
 
     # 关系质量控制
-    min_relation_confidence: float = 0.45
+    min_relation_confidence: float = 0.50
 
     # 缓存配置
     enable_perf_opt: bool = True

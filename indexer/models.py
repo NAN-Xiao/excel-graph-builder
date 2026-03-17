@@ -23,6 +23,7 @@ class TableSchema:
     numeric_columns: List[str] = field(default_factory=list)
     enum_columns: Dict[str, List] = field(default_factory=dict)
     domain_label: str = ""  # 业务域标签（hero/skill/battle/item/...）
+    header_offset: int = 0  # Excel 中 pandas header 之后跳过的元数据行数（类型行/标识符行等）
 
 
 @dataclass
@@ -39,6 +40,18 @@ class RelationEdge:
 
 
 @dataclass
+class ChangeRecord:
+    """表结构变更记录"""
+    timestamp: str                  # ISO 格式时间
+    table_name: str                 # 受影响的表
+    change_type: str                # added_columns | removed_columns | type_changed | table_added | table_removed
+    details: str                    # 人可读描述
+
+    def __str__(self):
+        return f"[{self.timestamp}] {self.table_name}: {self.change_type} — {self.details}"
+
+
+@dataclass
 class SchemaGraph:
     """完整的配置表知识图谱"""
     version: str = "1.0"
@@ -48,6 +61,7 @@ class SchemaGraph:
     tables: Dict[str, TableSchema] = field(default_factory=dict)
     relations: List[RelationEdge] = field(default_factory=list)
     _column_index: Dict[str, Set[str]] = field(default_factory=dict)
+    changelog: List[ChangeRecord] = field(default_factory=list)
 
     def add_table(self, table: TableSchema):
         self.tables[table.name] = table

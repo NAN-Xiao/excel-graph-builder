@@ -106,7 +106,7 @@ for abbr, fulls in GAME_ABBREVIATIONS.items():
         _REVERSE_ABBREV[full].append(abbr)
 
 
-# 游戏配置表常见业务域分类关键词
+# 游戏配置表常见业务域分类关键词（通用，用于 classify_table_domain 等查询）
 DOMAIN_KEYWORDS: Dict[str, List[str]] = {
     'hero': ['hero', 'character', 'role', 'char', 'player'],
     'skill': ['skill', 'ability', 'talent', 'spell', 'magic'],
@@ -123,6 +123,51 @@ DOMAIN_KEYWORDS: Dict[str, List[str]] = {
     'gacha': ['gacha', 'summon', 'draw', 'pool', 'banner', 'wish', 'lottery'],
     'growth': ['upgrade', 'enhance', 'evolve', 'awaken', 'refine', 'breakthrough', 'star'],
 }
+
+
+# ============================================================
+# 统一业务域分类规则（有序列表）
+# 用于 GraphBuilder._assign_domain_label / HTMLReportGenerator._get_group
+# 规则按顺序匹配，第一个命中即停止，因此更具体的放前面
+# ============================================================
+
+DOMAIN_CLASSIFICATION_RULES: List[tuple] = [
+    ("hero",     ['hero', 'character', 'char_']),
+    ("skill",    ['skill', 'ability', 'spell', 'buff', 'talent']),
+    ("battle",   ['battle', 'fight', 'pvp', 'war', 'combat', 'army']),
+    ("item",     ['item', 'equip', 'prop', 'goods', 'material', 'resource']),
+    ("building", ['building', 'construct', 'castle', 'city']),
+    ("quest",    ['quest', 'task', 'mission', 'chapter', 'stage']),
+    ("alliance", ['alliance', 'guild', 'union', 'clan', 'legion']),
+    ("monster",  ['monster', 'enemy', 'npc', 'mob', 'boss', 'creature']),
+    ("reward",   ['reward', 'drop', 'loot', 'prize', 'chest', 'gift']),
+    ("world",    ['map', 'world', 'terrain', 'region', 'area', 'field']),
+    ("social",   ['mail', 'chat', 'message', 'notice', 'friend']),
+    ("config",   ['config', 'setting', 'param', 'const', 'global', 'system']),
+]
+
+# 分类颜色映射（HTML 可视化用）
+DOMAIN_COLORS: Dict[str, str] = {
+    'hero': '#ff6b6b', 'skill': '#feca57', 'battle': '#ff9ff3',
+    'item': '#55efc4', 'building': '#74b9ff', 'quest': '#a29bfe',
+    'alliance': '#00cec9', 'monster': '#e17055', 'reward': '#fdcb6e',
+    'world': '#81ecec', 'social': '#fd79a8', 'config': '#636e72',
+    'other': '#b2bec3',
+}
+
+
+def classify_domain(table_name: str) -> str:
+    """
+    根据表名按统一规则分类业务域（有序匹配）。
+
+    Returns:
+        域名标签，未匹配返回 'other'
+    """
+    name_lower = table_name.lower()
+    for label, keywords in DOMAIN_CLASSIFICATION_RULES:
+        if any(kw in name_lower for kw in keywords):
+            return label
+    return "other"
 
 
 # 中文实体关键词 → 英文表名前缀的种子词典（通用游戏术语）
@@ -253,6 +298,8 @@ def build_cn_table_index(table_names: List[str]) -> Dict[str, List[str]]:
     策略:
     1. 用 _BASE_CN_ENTITY_MAP 中的英文候选词，反向匹配实际存在的表名
     2. 只保留在图谱中真实存在的表名，确保不会匹配到不存在的目标
+    3. 自动从表名中提取 stem（去掉 _base/_config/_data 等后缀），
+       反向查 _REVERSE_CN_MAP 补充词典覆盖
 
     Args:
         table_names: 图谱中所有实际表名（如 ['hero', 'skill', 'item', ...]）
@@ -269,12 +316,9 @@ def build_cn_table_index(table_names: List[str]) -> Dict[str, List[str]]:
         prefix_matches = []
         for en in en_candidates:
             en_lower = en.lower()
-            # 精确匹配（最高优先级）
             if en_lower in table_lower_map:
                 exact_matches.append(table_lower_map[en_lower])
                 continue
-            # 前缀匹配（en 是某个表名的前缀，如 'skill' 匹配 'skill_level'）
-            # 但候选词需 >= 3 字符，且匹配的表名必须以 _ 或行尾衔接
             if len(en_lower) >= 3:
                 for tname_lower, tname_real in table_lower_map.items():
                     if (tname_lower.startswith(en_lower) and
@@ -282,13 +326,48 @@ def build_cn_table_index(table_names: List[str]) -> Dict[str, List[str]]:
                              tname_lower[len(en_lower)] == '_')):
                         if tname_real not in exact_matches and tname_real not in prefix_matches:
                             prefix_matches.append(tname_real)
-        # 精确匹配优先，前缀匹配按表名长度排序（短表名更可能是基础实体表）
         prefix_matches.sort(key=len)
         combined = exact_matches + prefix_matches
         if combined:
             result[cn_key] = combined
 
+    # 自动扩展: 从实际表名 stem 反查中文关键词，补充未覆盖的映射
+    _auto_expand_cn_index(result, table_lower_map)
+
     return result
+
+
+# 英文 stem → 中文关键词 的反向索引（用于自动扩展）
+_REVERSE_CN_MAP: Dict[str, List[str]] = {}
+for _cn, _en_list in _BASE_CN_ENTITY_MAP.items():
+    for _en in _en_list:
+        _REVERSE_CN_MAP.setdefault(_en.lower(), []).append(_cn)
+
+_TABLE_STEM_SUFFIXES = frozenset([
+    '_base', '_config', '_data', '_info', '_list', '_detail',
+    '_table', '_cfg', '_setting', '_param', '_define',
+])
+
+
+def _auto_expand_cn_index(result: Dict[str, List[str]],
+                          table_lower_map: Dict[str, str]):
+    """
+    从实际表名中提取 stem，反查中文关键词。
+    若该 stem 已被 _BASE_CN_ENTITY_MAP 覆盖但 result 中缺失该表名，
+    则将表名补入 result。
+    """
+    for tname_lower, tname_real in table_lower_map.items():
+        stem = tname_lower
+        for sfx in _TABLE_STEM_SUFFIXES:
+            if tname_lower.endswith(sfx) and len(tname_lower) > len(sfx):
+                stem = tname_lower[:-len(sfx)]
+                break
+
+        cn_keys = _REVERSE_CN_MAP.get(stem, [])
+        for cn_key in cn_keys:
+            existing = result.get(cn_key, [])
+            if tname_real not in existing:
+                result.setdefault(cn_key, []).append(tname_real)
 
 
 def extract_cn_entity_tables(col_name: str,

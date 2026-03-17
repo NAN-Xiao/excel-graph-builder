@@ -12,7 +12,9 @@ from .feedback import FeedbackManager
 from .naming_convention import NamingConventionDiscovery
 from .game_dictionary import (
     GAME_ABBREVIATIONS, DOMAIN_KEYWORDS,
-    lookup_abbreviation, classify_table_domain, expand_column_name
+    DOMAIN_CLASSIFICATION_RULES, DOMAIN_COLORS,
+    lookup_abbreviation, classify_table_domain, classify_domain,
+    expand_column_name,
 )
 
 __all__ = [
@@ -24,7 +26,10 @@ __all__ = [
     'NamingConventionDiscovery',
     'GAME_ABBREVIATIONS',
     'DOMAIN_KEYWORDS',
+    'DOMAIN_CLASSIFICATION_RULES',
+    'DOMAIN_COLORS',
     'lookup_abbreviation',
     'classify_table_domain',
+    'classify_domain',
     'expand_column_name',
 ]

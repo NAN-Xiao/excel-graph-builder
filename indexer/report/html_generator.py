@@ -14,6 +14,7 @@ from typing import Optional
 
 from indexer.models import SchemaGraph, RelationEdge
 from indexer import SimpleLogger
+from indexer.discovery.game_dictionary import classify_domain
 
 # 3d-force-graph CDN URL
 FORCE_GRAPH_JS_URL = "https://unpkg.com/3d-force-graph"
@@ -55,8 +56,15 @@ class HTMLReportGenerator:
                 self.logger.warning("HTML 报告将使用 CDN 模式（需要联网查看）")
         return result
 
-    def generate(self, graph: SchemaGraph, build_result: Optional[dict] = None) -> str:
-        """生成 HTML 报告"""
+    def generate(self, graph: SchemaGraph, build_result: Optional[dict] = None,
+                 analysis=None) -> str:
+        """生成 HTML 报告
+
+        Args:
+            graph: 完整图谱
+            build_result: 构建统计（added/updated/deleted）
+            analysis: GraphAnalyzer 的 AnalysisResult（可选）
+        """
         nodes_data = []
         edges_data = []
 
@@ -114,8 +122,11 @@ class HTMLReportGenerator:
                 'numeric_columns': table.numeric_columns
             }
 
+        # 构建分析数据（供前端展示）
+        analysis_data = self._build_analysis_data(analysis)
+
         html_content = self._build_html(
-            nodes_data, edges_data, stats, tables_meta)
+            nodes_data, edges_data, stats, tables_meta, analysis_data)
 
         output_file = self.output_dir / "schema_graph.html"
         with open(output_file, 'w', encoding='utf-8') as f:
@@ -123,36 +134,35 @@ class HTMLReportGenerator:
         self.logger.success(f"HTML 报告已生成: {output_file}")
         return str(output_file)
 
-    def _get_group(self, table) -> str:
-        """根据表名特征分组（影响节点颜色）"""
-        name = table.name.lower()
-        for group, keywords in [
-            ("hero",     ['hero', 'character', 'char_']),
-            ("skill",    ['skill', 'ability', 'spell', 'buff', 'talent']),
-            ("battle",   ['battle', 'fight', 'pvp', 'war', 'combat', 'army']),
-            ("item",     ['item', 'equip', 'prop',
-             'goods', 'material', 'resource']),
-            ("building", ['building', 'construct', 'castle', 'city']),
-            ("quest",    ['quest', 'task', 'mission', 'chapter', 'stage']),
-            ("alliance", ['alliance', 'guild', 'union', 'clan', 'legion']),
-            ("monster",  ['monster', 'enemy',
-             'npc', 'mob', 'boss', 'creature']),
-            ("reward",   ['reward', 'drop', 'loot', 'prize', 'chest', 'gift']),
-            ("world",    ['map', 'world',
-             'terrain', 'region', 'area', 'field']),
-            ("social",   ['mail', 'chat', 'message', 'notice', 'friend']),
-            ("config",   ['config', 'setting',
-             'param', 'const', 'global', 'system']),
-        ]:
-            if any(kw in name for kw in keywords):
-                return group
-        return "other"
+    @staticmethod
+    def _build_analysis_data(analysis) -> dict:
+        """将 AnalysisResult 转换为前端可用的 JSON 数据"""
+        if analysis is None:
+            return {}
+        return {
+            'cycles': [list(c) for c in (analysis.cycles or [])[:20]],
+            'centrality_top': sorted(
+                analysis.centrality.items(),
+                key=lambda x: x[1], reverse=True
+            )[:15] if analysis.centrality else [],
+            'modules': [
+                sorted(list(m))[:20] for m in (analysis.modules or [])[:20]
+            ],
+            'orphans': sorted(analysis.orphans or [])[:50],
+            'critical_path': list(analysis.critical_path or []),
+        }
 
-    def _build_html(self, nodes, edges, stats, tables_meta=None):
+    def _get_group(self, table) -> str:
+        """根据表名特征分组（影响节点颜色），使用统一业务域规则"""
+        return classify_domain(table.name)
+
+    def _build_html(self, nodes, edges, stats, tables_meta=None,
+                     analysis_data=None):
         """生成完整 HTML"""
-        nodes_json = json.dumps(nodes, ensure_ascii=False)
-        edges_json = json.dumps(edges, ensure_ascii=False)
-        tables_meta_json = json.dumps(tables_meta or {}, ensure_ascii=False)
+        nodes_json = json.dumps(nodes, ensure_ascii=False, default=str)
+        edges_json = json.dumps(edges, ensure_ascii=False, default=str)
+        tables_meta_json = json.dumps(tables_meta or {}, ensure_ascii=False, default=str)
+        analysis_json = json.dumps(analysis_data or {}, ensure_ascii=False, default=str)
         total_edges = len(edges)
 
         if self.offline:
@@ -258,6 +268,7 @@ body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 .fb-btn.good:hover,.fb-btn.good.selected{{background:#14532d;border-color:#22c55e;color:#4ade80}}
 .fb-btn.bad:hover,.fb-btn.bad.selected{{background:#4c1d2a;border-color:#ef4444;color:#f87171}}
 .recall-export{{margin-top:8px;padding-top:8px;border-top:1px solid #1e293b}}
+#tab-analysis .recall-card{{cursor:pointer}}
 .node-tooltip{{background:rgba(15,23,42,.95);color:#e2e8f0;padding:8px 12px;border-radius:6px;font-size:12px;line-height:1.5;max-width:300px;pointer-events:none;border:1px solid rgba(129,140,248,.3);backdrop-filter:blur(8px)}}
 .node-tooltip strong{{color:#a5b4fc}}
 #detail-content table{{width:100%;font-size:11px;border-collapse:collapse;margin-bottom:10px}}
@@ -300,6 +311,7 @@ body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     <div class="sidebar">
         <div class="tab-bar">
             <button class="tab-btn active" onclick="switchTab('legend')">图例</button>
+            <button class="tab-btn" onclick="switchTab('analysis')">分析</button>
             <button class="tab-btn" onclick="switchTab('recall')">召回</button>
             <button class="tab-btn" onclick="switchTab('detail')">详情</button>
         </div>
@@ -343,6 +355,11 @@ body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
                 <p>点击节点聚焦 · 背景点击重置</p>
             </div>
         </div>
+        <div id="tab-analysis" class="tab-content">
+            <div id="analysis-content" style="font-size:12px;line-height:1.6">
+                <div style="color:#475569;text-align:center;padding:20px">分析数据加载中...</div>
+            </div>
+        </div>
         <div id="tab-recall" class="tab-content">
             <div class="recall-search">
                 <input class="recall-input" id="recall-input" type="text"
@@ -384,6 +401,7 @@ body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 const nodesData = {nodes_json};
 const edgesData = {edges_json};
 const tablesMeta = {tables_meta_json};
+const analysisData = {analysis_json};
 
 const groupColors = {{
     hero:'#ff6b6b', skill:'#feca57', battle:'#ff9ff3',
@@ -932,7 +950,63 @@ function exportRecallReport() {{
     URL.revokeObjectURL(url);
 }}
 
+// ===== ANALYSIS =====
+function renderAnalysis() {{
+    const box = document.getElementById('analysis-content');
+    if (!analysisData || !Object.keys(analysisData).length) {{
+        box.innerHTML = '<div style="color:#475569;text-align:center;padding:20px">无分析数据（表数量不足）</div>';
+        return;
+    }}
+    let html = '';
+    // 核心表 Top
+    if (analysisData.centrality_top && analysisData.centrality_top.length) {{
+        html += '<div style="margin-bottom:14px"><div style="font-size:12px;font-weight:600;color:#818cf8;margin-bottom:6px">核心表 Top '+analysisData.centrality_top.length+'</div>';
+        analysisData.centrality_top.forEach(([name, score], i) => {{
+            const w = Math.max(8, score);
+            html += '<div style="display:flex;align-items:center;margin:3px 0;cursor:pointer" onclick="focusNode(\\''+name+'\\')"><span style="color:#94a3b8;font-size:10px;width:18px">'+(i+1)+'</span><span style="flex:1;font-size:11px;color:#e2e8f0">'+name+'</span><div style="width:'+w+'%;height:4px;background:#4f46e5;border-radius:2px;min-width:6px;max-width:60%"></div><span style="font-size:10px;color:#64748b;margin-left:6px;min-width:30px;text-align:right">'+score.toFixed(1)+'</span></div>';
+        }});
+        html += '</div>';
+    }}
+    // 业务模块
+    if (analysisData.modules && analysisData.modules.length) {{
+        html += '<div style="margin-bottom:14px;padding-top:10px;border-top:1px solid #1e293b"><div style="font-size:12px;font-weight:600;color:#818cf8;margin-bottom:6px">业务模块 ('+analysisData.modules.length+')</div>';
+        analysisData.modules.forEach((mod, i) => {{
+            const preview = mod.slice(0,5).join(', ') + (mod.length>5 ? ' ...+' + (mod.length-5) : '');
+            html += '<div style="padding:6px 8px;margin:3px 0;background:#1a2332;border-radius:4px;font-size:11px"><span style="color:#64748b">模块'+(i+1)+' ('+mod.length+'表)</span><br><span style="color:#94a3b8">'+preview+'</span></div>';
+        }});
+        html += '</div>';
+    }}
+    // 循环依赖
+    if (analysisData.cycles && analysisData.cycles.length) {{
+        html += '<div style="margin-bottom:14px;padding-top:10px;border-top:1px solid #1e293b"><div style="font-size:12px;font-weight:600;color:#f87171;margin-bottom:6px">循环依赖 ('+analysisData.cycles.length+')</div>';
+        analysisData.cycles.slice(0,10).forEach(cycle => {{
+            html += '<div style="padding:4px 8px;margin:2px 0;background:rgba(248,113,113,0.08);border-radius:4px;font-size:10px;color:#fca5a5">'+cycle.join(' → ')+' → '+cycle[0]+'</div>';
+        }});
+        if (analysisData.cycles.length > 10) html += '<div style="font-size:10px;color:#475569;padding:2px 8px">...还有 '+(analysisData.cycles.length-10)+' 个</div>';
+        html += '</div>';
+    }} else {{
+        html += '<div style="margin-bottom:14px;padding-top:10px;border-top:1px solid #1e293b"><div style="font-size:12px;font-weight:600;color:#4ade80;margin-bottom:4px">循环依赖</div><div style="font-size:11px;color:#475569">无循环依赖</div></div>';
+    }}
+    // 孤立表
+    if (analysisData.orphans && analysisData.orphans.length) {{
+        html += '<div style="margin-bottom:14px;padding-top:10px;border-top:1px solid #1e293b"><div style="font-size:12px;font-weight:600;color:#fbbf24;margin-bottom:6px">孤立表 ('+analysisData.orphans.length+')</div>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:3px">';
+        analysisData.orphans.slice(0,30).forEach(name => {{
+            html += '<span style="padding:2px 6px;background:#1e293b;border-radius:3px;font-size:10px;color:#94a3b8;cursor:pointer" onclick="focusNode(\\''+name+'\\')">'+name+'</span>';
+        }});
+        if (analysisData.orphans.length > 30) html += '<span style="padding:2px 6px;font-size:10px;color:#475569">...+' + (analysisData.orphans.length-30) + '</span>';
+        html += '</div></div>';
+    }}
+    // 关键路径
+    if (analysisData.critical_path && analysisData.critical_path.length > 1) {{
+        html += '<div style="padding-top:10px;border-top:1px solid #1e293b"><div style="font-size:12px;font-weight:600;color:#818cf8;margin-bottom:6px">最长依赖链 ('+analysisData.critical_path.length+')</div>';
+        html += '<div style="font-size:10px;color:#94a3b8;line-height:1.6;word-break:break-all">'+analysisData.critical_path.join(' → ')+'</div></div>';
+    }}
+    box.innerHTML = html || '<div style="color:#475569;text-align:center;padding:20px">无分析数据</div>';
+}}
+
 // ===== START =====
+renderAnalysis();
 requestAnimationFrame(fpsLoop);
 initGraph();
 </script>

@@ -92,8 +92,8 @@ class IndexService:
 
                 self.logger.success(f"构建完成 | {result.summary()}")
 
-                # 自动导出 LLM 资产
-                self._export_llm_assets()
+                # 自动导出 LLM 资产（传入分析结果）
+                self._export_llm_assets(analysis=result.analysis)
 
                 return True
             else:
@@ -106,32 +106,66 @@ class IndexService:
             traceback.print_exc()
             return False
 
-    def _export_llm_assets(self):
+    def _export_llm_assets(self, analysis=None):
         """构建完成后自动导出 LLM/RAG 所需资产"""
         if not self.current_graph:
             return
         try:
-            from indexer.export import export_llm_chunks, export_schema_summary
+            from indexer.export import (
+                export_llm_chunks, export_schema_summary,
+                export_column_index,
+                export_relation_graph, export_join_paths,
+                export_table_profiles,
+                export_cell_locator,
+            )
             storage_dir = Path(self.storage.data_dir)
 
-            # 1. schema_summary.txt — 轻量表名摘要，~500 tokens，用于 RAG 意图提取
+            # ── Schema 层 ──
+            # 1. schema_summary.txt — 轻量表名摘要，~500 tokens，RAG 意图提取
             summary_path = storage_dir / "schema_summary.txt"
-            export_schema_summary(self.current_graph, str(summary_path))
+            export_schema_summary(self.current_graph, str(summary_path),
+                                  analysis=analysis)
 
-            # 2. llm_chunks.jsonl — 每表一行 JSON，用于向量化召回
+            # 2. llm_chunks.jsonl — 每表一行 JSON，向量化召回
             jsonl_path = storage_dir / "llm_chunks.jsonl"
-            export_llm_chunks(self.current_graph, str(jsonl_path))
+            export_llm_chunks(self.current_graph, str(jsonl_path),
+                              analysis=analysis)
 
-            # 3. llm_chunks.md — Markdown 格式，便于人工检查
+            # 3. llm_chunks.md — Markdown 格式，人工检查
             md_path = storage_dir / "llm_chunks.md"
-            export_llm_chunks(self.current_graph, str(md_path))
+            export_llm_chunks(self.current_graph, str(md_path),
+                              analysis=analysis)
+
+            # 4. column_index.json — 列名→表名倒排索引
+            col_idx_path = storage_dir / "column_index.json"
+            export_column_index(self.current_graph, str(col_idx_path))
+
+            # ── RAG 关系层 ──
+            # 5. relation_graph.json — 邻接表 + JOIN 条件
+            rel_graph_path = storage_dir / "relation_graph.json"
+            export_relation_graph(self.current_graph, str(rel_graph_path))
+
+            # 6. join_paths.json — 预计算表间 JOIN 路径（≤1 跳，控制文件体积）
+            join_path_path = storage_dir / "join_paths.json"
+            export_join_paths(self.current_graph, str(join_path_path),
+                              max_hops=1)
+
+            # 7. table_profiles.jsonl — 每表富元数据 profile
+            profiles_path = storage_dir / "table_profiles.jsonl"
+            export_table_profiles(self.current_graph, str(profiles_path))
+
+            # 8. cell_locator.json — 单元格定位索引（表名→文件→行号→列号）
+            cell_loc_path = storage_dir / "cell_locator.json"
+            export_cell_locator(self.current_graph, str(cell_loc_path))
 
             self.logger.success(
-                f"LLM 资产已导出 → {summary_path.name}, "
-                f"{jsonl_path.name}, {md_path.name}"
+                f"LLM/RAG 资产已导出 → {summary_path.name}, "
+                f"{jsonl_path.name}, {col_idx_path.name}, "
+                f"{rel_graph_path.name}, {join_path_path.name}, "
+                f"{profiles_path.name}, {cell_loc_path.name}"
             )
         except Exception as e:
-            self.logger.error(f"LLM 资产导出失败: {e}")
+            self.logger.error(f"LLM/RAG 资产导出失败: {e}")
 
     def _do_incremental_build(self):
         """执行真正的增量构建（由延迟任务调用）"""
@@ -238,9 +272,9 @@ class IndexService:
 
 def main():
     parser = argparse.ArgumentParser(description="索引构建服务")
-    parser.add_argument("--data-root", required=True, help="Excel 数据根目录")
-    parser.add_argument("--storage-dir", default="./data/indexer", help="存储目录")
-    parser.add_argument("--html-dir", default="./html", help="HTML 报告输出目录")
+    parser.add_argument("--data-root", default=".", help="Excel 数据根目录（默认为当前目录）")
+    parser.add_argument("--storage-dir", default="./graph", help="构建产出目录")
+    parser.add_argument("--html-dir", default="./graph", help="HTML 报告输出目录")
     parser.add_argument("--offline-html", action="store_true",
                         default=True, help="生成离线 HTML 报告（内联 vis.js）")
     parser.add_argument("--daemon", action="store_true", help="后台服务模式")

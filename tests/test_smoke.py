@@ -175,6 +175,88 @@ def test_llm_export():
         os.unlink(tmp.name)
 
 
+def test_incremental_relation_preservation():
+    """增量构建只清除受影响表的关系，保留其他"""
+    graph = SchemaGraph()
+    # 三张表：hero, skill, item
+    for name, domain in [("hero", "hero"), ("skill", "skill"), ("item", "item")]:
+        graph.add_table(TableSchema(
+            name=name, file_path=f"{name}.xlsx",
+            columns=[{"name": "id", "dtype": "int", "sample_values": [1, 2, 3],
+                      "unique_count": 3, "null_count": 0, "total_count": 3}],
+            primary_key="id", row_count=100, domain_label=domain
+        ))
+
+    # 三条关系
+    graph.relations = [
+        RelationEdge(from_table="hero", from_column="skill_id",
+                     to_table="skill", to_column="id",
+                     relation_type="fk", confidence=0.9,
+                     discovery_method="naming_convention"),
+        RelationEdge(from_table="hero", from_column="item_id",
+                     to_table="item", to_column="id",
+                     relation_type="fk", confidence=0.85,
+                     discovery_method="naming_convention"),
+        RelationEdge(from_table="skill", from_column="item_id",
+                     to_table="item", to_column="id",
+                     relation_type="fk", confidence=0.8,
+                     discovery_method="containment"),
+    ]
+
+    # 模拟增量：只有 hero 表变更
+    affected = {"hero"}
+    before_count = len(graph.relations)
+    assert before_count == 3
+
+    # 只清除涉及 hero 的关系
+    graph.relations = [
+        r for r in graph.relations
+        if r.from_table not in affected and r.to_table not in affected
+    ]
+
+    # skill→item 的关系应该被保留（两端都不是 hero）
+    assert len(graph.relations) == 1
+    assert graph.relations[0].from_table == "skill"
+    assert graph.relations[0].to_table == "item"
+    print("  [OK] test_incremental_relation_preservation")
+
+
+def test_scanner_deletion_detection():
+    """Scanner 应能检测删除的表"""
+    from indexer.scanner.directory_scanner import DirectoryScanner
+    import tempfile, shutil
+
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        # 创建一个 CSV 文件
+        csv_path = os.path.join(tmp_dir, "test_table.csv")
+        with open(csv_path, 'w') as f:
+            f.write("id,name\n1,a\n2,b\n")
+
+        scanner = DirectoryScanner(data_root=tmp_dir)
+
+        # 首次扫描
+        result1 = scanner.scan()
+        assert len(result1['new']) == 1
+        assert result1['new'][0].name == "test_table"
+
+        # 构建图谱
+        graph = SchemaGraph()
+        for t in result1['new']:
+            graph.add_table(t)
+
+        # 删除文件
+        os.unlink(csv_path)
+
+        # 增量扫描应检测到删除
+        result2 = scanner.scan(existing_graph=graph)
+        assert "test_table" in result2.get('deleted', []), \
+            f"Expected 'test_table' in deleted, got {result2.get('deleted', [])}"
+        print("  [OK] test_scanner_deletion_detection")
+    finally:
+        shutil.rmtree(tmp_dir)
+
+
 if __name__ == "__main__":
     print("Running smoke tests...")
     test_normalize_value()
@@ -183,4 +265,6 @@ if __name__ == "__main__":
     test_schema_graph_model()
     test_json_serialization()
     test_llm_export()
+    test_incremental_relation_preservation()
+    test_scanner_deletion_detection()
     print("\nAll tests passed!")

@@ -5,7 +5,7 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Set, Tuple
+from typing import List, Set, Tuple, Optional
 
 from indexer.models import SchemaGraph, RelationEdge
 from indexer import SimpleLogger
@@ -36,12 +36,15 @@ class RelationDiscoveryStrategy(ABC):
         self.logger = SimpleLogger()
 
     @abstractmethod
-    def discover(self, graph: SchemaGraph) -> List[RelationEdge]:
+    def discover(self, graph: SchemaGraph,
+                 changed_tables: Optional[Set[str]] = None) -> List[RelationEdge]:
         """
         发现关系
 
         Args:
             graph: 当前图谱
+            changed_tables: 增量模式下发生变更的表名集合。
+                            为 None 表示全量发现；非 None 时只检查涉及这些表的关系。
 
         Returns:
             新发现的关系列表

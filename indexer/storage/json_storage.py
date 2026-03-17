@@ -11,14 +11,24 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict
 
-from indexer.models import SchemaGraph, TableSchema, RelationEdge
+from indexer.models import SchemaGraph, TableSchema, RelationEdge, ChangeRecord
+from indexer import SimpleLogger
 
 # 跨平台文件锁
+
+_LOCK_MODE = None  # 'fcntl' | 'msvcrt' | None
 try:
     import fcntl  # Linux/Mac
-    HAS_FCNTL = True
+    _LOCK_MODE = 'fcntl'
 except ImportError:
-    HAS_FCNTL = False  # Windows
+    pass
+
+if _LOCK_MODE is None and platform.system() == 'Windows':
+    try:
+        import msvcrt  # Windows
+        _LOCK_MODE = 'msvcrt'
+    except ImportError:
+        pass
 
 
 class JsonGraphStorage:
@@ -27,12 +37,13 @@ class JsonGraphStorage:
     def __init__(self, data_dir: str = "./data/indexer"):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.logger = SimpleLogger()
 
         self.graph_file = self.data_dir / "schema_graph.json"
         self.index_file = self.data_dir / "column_index.json"
         self.meta_file = self.data_dir / "meta.json"
 
-        print(f"[INFO] 存储目录: {self.data_dir}")
+        self.logger.info(f"存储目录: {self.data_dir}")
 
     def save(self, graph: SchemaGraph) -> bool:
         """保存图谱到 JSON"""
@@ -49,7 +60,12 @@ class JsonGraphStorage:
                 "relations": [
                     self._relation_to_dict(rel)
                     for rel in graph.relations
-                ]
+                ],
+                "changelog": [
+                    {"timestamp": c.timestamp, "table_name": c.table_name,
+                     "change_type": c.change_type, "details": c.details}
+                    for c in (graph.changelog or [])
+                ][-200:]  # 保留最近 200 条
             }
             self._atomic_write(self.graph_file, graph_data)
 
@@ -72,18 +88,18 @@ class JsonGraphStorage:
             }
             self._atomic_write(self.meta_file, meta_data)
 
-            print(
-                f"[OK] 图谱已保存: {len(graph.tables)} 表, {len(graph.relations)} 关系")
+            self.logger.success(
+                f"图谱已保存: {len(graph.tables)} 表, {len(graph.relations)} 关系")
             return True
 
         except Exception as e:
-            print(f"[ERR] 保存失败: {e}")
+            self.logger.error(f"保存失败: {e}")
             return False
 
     def load(self) -> Optional[SchemaGraph]:
         """从 JSON 加载图谱"""
         if not self.graph_file.exists():
-            print("[INFO] 没有找到现有图谱文件")
+            self.logger.info("没有找到现有图谱文件")
             return None
 
         try:
@@ -106,6 +122,15 @@ class JsonGraphStorage:
                 rel = self._dict_to_relation(rel_data)
                 graph.relations.append(rel)
 
+            # 加载变更日志
+            for cr in data.get("changelog", []):
+                graph.changelog.append(ChangeRecord(
+                    timestamp=cr.get("timestamp", ""),
+                    table_name=cr.get("table_name", ""),
+                    change_type=cr.get("change_type", ""),
+                    details=cr.get("details", ""),
+                ))
+
             # 重建列索引
             if self.index_file.exists():
                 with open(self.index_file, 'r', encoding='utf-8') as f:
@@ -115,45 +140,65 @@ class JsonGraphStorage:
             else:
                 graph._rebuild_index()
 
-            print(f"[OK] 图谱已加载: {len(graph.tables)} 表")
+            self.logger.success(f"图谱已加载: {len(graph.tables)} 表")
             return graph
 
         except Exception as e:
-            print(f"[ERR] 加载失败: {e}")
+            self.logger.error(f"加载失败: {e}")
             import traceback
             traceback.print_exc()
             return None
 
     def _atomic_write(self, filepath: Path, data: dict):
-        """原子写入（跨平台）"""
+        """原子写入（跨平台文件锁）"""
         temp_file = filepath.with_suffix('.tmp')
 
         with open(temp_file, 'w', encoding='utf-8') as f:
-            # 文件锁（Linux/Mac）
-            if HAS_FCNTL:
+            # 加锁
+            if _LOCK_MODE == 'fcntl':
                 fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            elif _LOCK_MODE == 'msvcrt':
+                msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
 
             json.dump(data, f, ensure_ascii=False, indent=2, default=str)
 
-            if HAS_FCNTL:
+            # 解锁
+            if _LOCK_MODE == 'fcntl':
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            elif _LOCK_MODE == 'msvcrt':
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
 
         # 原子重命名（Windows 和 Unix 都支持）
         temp_file.replace(filepath)
 
+    # 持久化时每列最多保留的 sample_values 数量（减小 JSON 文件体积）
+    MAX_PERSISTED_SAMPLES = 30
+
     @staticmethod
-    def _table_to_dict(table: TableSchema) -> dict:
+    def _table_to_dict(table: TableSchema,
+                       max_samples: int = 30) -> dict:
+        # 截断 sample_values 以减小 schema_graph.json 体积
+        columns_slim = []
+        for col in table.columns:
+            col_copy = dict(col)
+            sv = col_copy.get('sample_values')
+            if sv and len(sv) > max_samples:
+                col_copy['sample_values'] = sv[:max_samples]
+            columns_slim.append(col_copy)
+
         d = {
             "name": table.name,
             "file_path": table.file_path,
             "sheet_name": table.sheet_name,
             "row_count": table.row_count,
-            "columns": table.columns,
+            "columns": columns_slim,
             "primary_key": table.primary_key,
             "modified_time": table.modified_time,
             "hash": table.hash,
             "numeric_columns": table.numeric_columns,
             "enum_columns": table.enum_columns,
+            "header_offset": table.header_offset,
         }
         if table.domain_label:
             d["domain_label"] = table.domain_label
@@ -173,6 +218,7 @@ class JsonGraphStorage:
             numeric_columns=data.get("numeric_columns", []),
             enum_columns=data.get("enum_columns", {}),
             domain_label=data.get("domain_label", ""),
+            header_offset=data.get("header_offset", 0),
         )
 
     @staticmethod

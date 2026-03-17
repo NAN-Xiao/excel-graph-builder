@@ -7,14 +7,17 @@
 from pathlib import Path
 from typing import Callable, Optional
 
+from indexer import SimpleLogger
+
+_logger = SimpleLogger()
+
 try:
     from watchdog.observers import Observer
     from watchdog.events import FileSystemEventHandler
     WATCHDOG_AVAILABLE = True
 except ImportError:
     WATCHDOG_AVAILABLE = False
-    print("[WARN] watchdog 未安装，文件监控功能不可用")
-    print("[WARN] 请运行: pip install watchdog")
+    _logger.warning("watchdog 未安装，文件监控功能不可用。请运行: pip install watchdog")
 
 
 class ExcelChangeHandler(FileSystemEventHandler):
@@ -36,7 +39,7 @@ class ExcelChangeHandler(FileSystemEventHandler):
             self.on_change(event.src_path, 'deleted')
     
     def _is_excel(self, path: str) -> bool:
-        return path.lower().endswith(('.xlsx', '.xls', '.csv'))
+        return path.lower().endswith(('.xlsx', '.xls', '.csv', '.tsv'))
 
 
 class FileWatcher:
@@ -51,7 +54,7 @@ class FileWatcher:
     def start(self):
         """启动监控"""
         if not WATCHDOG_AVAILABLE:
-            print("[ERR] watchdog 未安装，无法启动监控")
+            _logger.error("watchdog 未安装，无法启动监控")
             return False
         
         if self._running:
@@ -64,10 +67,10 @@ class FileWatcher:
             self.observer.start()
             self._running = True
             
-            print(f"[OK] 文件监控已启动: {self.watch_path}")
+            _logger.success(f"文件监控已启动: {self.watch_path}")
             return True
         except Exception as e:
-            print(f"[ERR] 启动监控失败: {e}")
+            _logger.error(f"启动监控失败: {e}")
             return False
     
     def stop(self):
@@ -76,7 +79,7 @@ class FileWatcher:
             self.observer.stop()
             self.observer.join()
             self._running = False
-            print("[INFO] 文件监控已停止")
+            _logger.info("文件监控已停止")
     
     def is_running(self) -> bool:
         return self._running

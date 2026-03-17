@@ -54,14 +54,19 @@ class DirectoryScanner:
         """
         if not self.data_root.exists():
             self.logger.error(f"数据目录不存在: {self.data_root}")
-            return {'new': [], 'updated': [], 'unchanged': []}
+            # 所有之前的表都视为已删除
+            all_prev = list(existing_graph.tables.keys()) if existing_graph else []
+            return {'new': [], 'updated': [], 'unchanged': [],
+                    'deleted': all_prev}
 
         # 1. 收集所有文件
         files = self._discover_files()
         self.logger.info(f"发现 {len(files)} 个数据文件")
 
         if not files:
-            return {'new': [], 'updated': [], 'unchanged': []}
+            all_prev = list(existing_graph.tables.keys()) if existing_graph else []
+            return {'new': [], 'updated': [], 'unchanged': [],
+                    'deleted': all_prev}
 
         # 2. 构建已有表索引 (table_name -> TableSchema)
         existing_tables: Dict[str, TableSchema] = {}
@@ -131,15 +136,23 @@ class DirectoryScanner:
                             f"处理文件失败 {finfo['rel_path']}: {e}"
                         )
 
+        # 5. 检测已删除的表（存在于旧图谱但磁盘上已无对应文件）
+        all_accounted = existing_files_seen | set(unchanged)
+        deleted_tables = [
+            name for name in existing_tables if name not in all_accounted
+        ]
+
         self.logger.info(
             f"扫描结果: {len(new_tables)} 新增, "
-            f"{len(updated_tables)} 更新, {len(unchanged)} 未变化"
+            f"{len(updated_tables)} 更新, {len(unchanged)} 未变化, "
+            f"{len(deleted_tables)} 删除"
         )
 
         return {
             'new': new_tables,
             'updated': updated_tables,
             'unchanged': unchanged,
+            'deleted': deleted_tables,
         }
 
     def _discover_files(self) -> List[Dict]:

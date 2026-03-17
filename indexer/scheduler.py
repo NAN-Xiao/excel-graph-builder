@@ -75,19 +75,20 @@ class BuildScheduler:
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
         self._delayed_tasks: Dict[str, DelayedTask] = {}
+        self.logger = SimpleLogger()
 
     def add_daily_job(self, job_func: Callable, hour: int = 2, minute: int = 0):
         """添加每日定时任务"""
         job = schedule.every().day.at(f"{hour:02d}:{minute:02d}").do(job_func)
         self.jobs.append(job)
-        print(f"[INFO] 添加每日任务: {hour:02d}:{minute:02d}")
+        self.logger.info(f"添加每日任务: {hour:02d}:{minute:02d}")
         return job
 
     def add_interval_job(self, job_func: Callable, minutes: int):
         """添加间隔任务"""
         job = schedule.every(minutes).minutes.do(job_func)
         self.jobs.append(job)
-        print(f"[INFO] 添加间隔任务: 每 {minutes} 分钟")
+        self.logger.info(f"添加间隔任务: 每 {minutes} 分钟")
         return job
 
     def add_delayed_task(self, name: str, callback: Callable, delay_seconds: float) -> DelayedTask:
@@ -131,37 +132,36 @@ class BuildScheduler:
                 self._thread = threading.Thread(
                     target=self._run_loop, daemon=True)
                 self._thread.start()
-                print("[OK] 调度器已在后台启动")
+                self.logger.success("调度器已在后台启动")
 
     def stop(self):
         """停止调度器"""
         with self._lock:
             self._running = False
             schedule.clear()
-            # 取消所有延迟任务
             for task in self._delayed_tasks.values():
                 task.cancel()
-            print("[INFO] 调度器已停止")
+            self.logger.info("调度器已停止")
 
     def _run_loop(self):
         """主循环"""
-        print("[INFO] 调度循环已启动")
+        self.logger.info("调度循环已启动")
 
         while self._running:
             try:
                 schedule.run_pending()
             except Exception as e:
-                print(f"[ERR] 执行任务出错: {e}")
+                self.logger.error(f"执行任务出错: {e}")
 
             time.sleep(60)
 
     def run_now(self, job_func: Callable):
         """立即执行一次任务"""
-        print("[INFO] 立即执行任务")
+        self.logger.info("立即执行任务")
         try:
             job_func()
         except Exception as e:
-            print(f"[ERR] 立即执行出错: {e}")
+            self.logger.error(f"立即执行出错: {e}")
 
 
 # 导入 Dict 类型

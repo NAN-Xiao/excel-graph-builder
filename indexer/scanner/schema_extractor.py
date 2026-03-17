@@ -63,7 +63,9 @@ class SchemaExtractor:
             'Sheet1', base_name, None) else f"{base_name}_{sheet_name}"
 
         # 检测并跳过元数据表头行（英文字段名行、类型标记行等）
-        df = self.reader.skip_header_rows(df)
+        header_offset = self.reader._detect_header_rows(df)
+        if header_offset > 0:
+            df = df.iloc[header_offset:].reset_index(drop=True)
 
         # 收集列信息
         col_samples = self.reader.collect_column_samples(df)
@@ -112,6 +114,7 @@ class SchemaExtractor:
             hash=content_hash,
             numeric_columns=numeric_columns,
             enum_columns=enum_columns,
+            header_offset=header_offset,
         )
 
     def _infer_primary_key(self, columns: List[Dict], row_count: int) -> Optional[str]:

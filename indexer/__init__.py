@@ -13,6 +13,7 @@ Indexer - 配置表索引构建服务
 """
 
 import logging
+import logging.handlers
 import os
 from pathlib import Path
 
@@ -37,10 +38,15 @@ def _setup_logger() -> logging.Logger:
     ch.setFormatter(fmt)
     logger.addHandler(ch)
 
-    # 文件（自动创建目录）
-    log_dir = Path(os.environ.get("INDEXER_LOG_DIR", "./data/indexer"))
+    # 文件（自动创建目录，10MB 轮转，保留 5 份）
+    log_dir = Path(os.environ.get("INDEXER_LOG_DIR", "./graph"))
     log_dir.mkdir(parents=True, exist_ok=True)
-    fh = logging.FileHandler(log_dir / "indexer.log", encoding="utf-8")
+    fh = logging.handlers.RotatingFileHandler(
+        log_dir / "indexer.log",
+        maxBytes=10 * 1024 * 1024,  # 10 MB
+        backupCount=5,
+        encoding="utf-8",
+    )
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(fmt)
     logger.addHandler(fh)

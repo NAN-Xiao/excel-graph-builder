@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Optional, Set, Tuple, List, Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from indexer.models import SchemaGraph, TableSchema, RelationEdge
+from indexer.models import SchemaGraph, TableSchema, RelationEdge, ChangeRecord
 from indexer import SimpleLogger
 from indexer.report.html_generator import HTMLReportGenerator
 from indexer.analysis.analyzer import GraphAnalyzer
@@ -26,7 +26,8 @@ from indexer.discovery import (
     AbbreviationDiscovery,
     TransitiveDiscovery,
     NamingConventionDiscovery,
-    FeedbackManager
+    FeedbackManager,
+    classify_domain,
 )
 
 
@@ -41,6 +42,7 @@ class BuildResult:
     scan_time: float = 0.0
     discover_time: float = 0.0
     total_time: float = 0.0
+    analysis: Optional[object] = None  # AnalysisResult (避免循环导入用 object)
 
     def summary(self) -> str:
         return (
@@ -115,12 +117,7 @@ class GraphBuilder:
         self.logger.info("开始图谱构建" + ("（增量）" if incremental else "（全量）"))
         self.logger.info("=" * 60)
 
-        # Phase 0: 处理删除
-        if deleted_tables:
-            for table_name in deleted_tables:
-                if graph.remove_table(table_name):
-                    result.deleted_tables += 1
-                    self.logger.info(f"  删除表: {table_name}")
+        now_iso = datetime.now().isoformat(timespec='seconds')
 
         # Phase 1: 扫描表结构
         scan_start = time.time()
@@ -129,17 +126,44 @@ class GraphBuilder:
         scan_results = scanner.scan(
             existing_graph=graph if incremental else None)
 
+        # Phase 0: 处理删除（合并外部传入 + 扫描器自动检测）
+        all_deleted: Set[str] = set(deleted_tables or [])
+        all_deleted.update(scan_results.get('deleted', []))
+        for table_name in all_deleted:
+            if graph.remove_table(table_name):
+                result.deleted_tables += 1
+                self.logger.info(f"  删除表: {table_name}")
+                graph.changelog.append(ChangeRecord(
+                    timestamp=now_iso, table_name=table_name,
+                    change_type="table_removed", details="表被删除"))
+
+        # 收集受影响的表名（增量关系发现用）
+        affected_tables: Set[str] = set(all_deleted)
+
         for table_schema in scan_results['new']:
             self._assign_domain_label(table_schema)
             graph.add_table(table_schema)
             result.new_tables += 1
+            affected_tables.add(table_schema.name)
+            graph.changelog.append(ChangeRecord(
+                timestamp=now_iso, table_name=table_schema.name,
+                change_type="table_added",
+                details=f"新增表 ({len(table_schema.columns)} 列, {table_schema.row_count} 行)"))
+
         for table_schema in scan_results['updated']:
+            old_table = graph.tables.get(table_schema.name)
+            if old_table:
+                changes = self._diff_columns(old_table, table_schema)
+                for ch in changes:
+                    graph.changelog.append(ChangeRecord(
+                        timestamp=now_iso, table_name=table_schema.name,
+                        change_type=ch[0], details=ch[1]))
             graph.remove_table(table_schema.name)
             self._assign_domain_label(table_schema)
             graph.add_table(table_schema)
             result.updated_tables += 1
+            affected_tables.add(table_schema.name)
 
-        # 补全存量表的 domain_label（从 JSON 加载的旧表可能缺失）
         for table in graph.tables.values():
             if not table.domain_label:
                 self._assign_domain_label(table)
@@ -150,11 +174,33 @@ class GraphBuilder:
             f"{result.updated_tables} 更新, {result.deleted_tables} 删除"
         )
 
-        # Phase 2: 执行关系发现（P5: 并行执行独立策略）
+        # Phase 2: 关系发现
         discover_start = time.time()
         self.logger.info("\n[关系发现] 执行所有策略...")
-        if incremental and (result.new_tables > 0 or result.updated_tables > 0 or result.deleted_tables > 0):
-            graph.relations.clear()
+
+        # 增量模式的核心：只清除受影响表的关系，保留其余
+        changed_tables: Optional[Set[str]] = None
+        if incremental and affected_tables:
+            before_count = len(graph.relations)
+            graph.relations = [
+                r for r in graph.relations
+                if r.from_table not in affected_tables
+                and r.to_table not in affected_tables
+            ]
+            kept = len(graph.relations)
+            self.logger.info(
+                f"  增量模式: {len(affected_tables)} 个受影响表, "
+                f"保留 {kept}/{before_count} 条关系, "
+                f"只重新发现涉及变更表的关系"
+            )
+            changed_tables = affected_tables
+        elif incremental and not affected_tables:
+            self.logger.info("  无变更，跳过关系发现")
+            result.discover_time = 0
+            result.table_count = len(graph.tables)
+            result.relation_count = len(graph.relations)
+            result.total_time = time.time() - total_start
+            return graph, result
 
         # Transitive 依赖前面策略的结果，需要后执行
         independent = [s for s in self.discovery_strategies
@@ -162,10 +208,10 @@ class GraphBuilder:
         dependent = [s for s in self.discovery_strategies
                      if isinstance(s, TransitiveDiscovery)]
 
-        # 并行执行独立策略
+        # 并行执行独立策略（传递 changed_tables）
         with ThreadPoolExecutor(max_workers=len(independent) or 1) as pool:
             futures = {
-                pool.submit(self._run_strategy, s, graph): s
+                pool.submit(self._run_strategy, s, graph, changed_tables): s
                 for s in independent
             }
             for i, future in enumerate(as_completed(futures)):
@@ -175,9 +221,9 @@ class GraphBuilder:
                     self.progress_callback(
                         "discovery", i + 1, len(self.discovery_strategies))
 
-        # 串行执行依赖策略（transitive）
+        # 串行执行依赖策略（transitive 在全量关系上运行）
         for strategy in dependent:
-            rels = self._run_strategy(strategy, graph)
+            rels = self._run_strategy(strategy, graph, changed_tables)
             graph.relations.extend(rels)
         if self.progress_callback:
             self.progress_callback("discovery", len(self.discovery_strategies),
@@ -188,7 +234,8 @@ class GraphBuilder:
         feedback_count = self.feedback.apply_to_graph(graph)
         self.logger.info(f"  应用 {feedback_count} 条反馈")
 
-        # Phase 4: 去重 + 最低置信度过滤
+        # Phase 4: 跨策略融合 + 去重 + 最低置信度过滤
+        graph.relations = self._fuse_cross_strategy(graph.relations)
         graph.relations = self._deduplicate_relations(graph.relations)
         graph.relations = [
             r for r in graph.relations
@@ -200,13 +247,29 @@ class GraphBuilder:
         result.relation_count = len(graph.relations)
         result.discover_time = time.time() - discover_start
 
-        # Phase 5: 生成 HTML 报告
+        # Phase 5: 图算法分析
+        analysis = None
+        if len(graph.tables) >= 2:
+            try:
+                analyzer = GraphAnalyzer(graph)
+                analysis = analyzer.analyze()
+                self.logger.info(
+                    f"[分析] {len(analysis.cycles)} 环, "
+                    f"{len(analysis.modules)} 模块, "
+                    f"{len(analysis.orphans)} 孤立表"
+                )
+            except Exception as e:
+                self.logger.warning(f"图谱分析失败: {e}")
+
+        result.analysis = analysis
+
+        # Phase 6: 生成 HTML 报告
         try:
             self.html_generator.generate(graph, {
                 'added': result.new_tables,
                 'updated': result.updated_tables,
                 'deleted': result.deleted_tables
-            })
+            }, analysis=analysis)
         except Exception as e:
             self.logger.warning(f"HTML 报告生成失败: {e}")
 
@@ -246,41 +309,99 @@ class GraphBuilder:
     def close(self):
         self.feedback.stop()
 
-    def _run_strategy(self, strategy, graph):
+    def _run_strategy(self, strategy, graph, changed_tables=None):
         """运行单个发现策略（带异常隔离）"""
         try:
-            return strategy.discover(graph)
+            return strategy.discover(graph, changed_tables=changed_tables)
         except Exception as e:
             self.logger.error(
                 f"  策略 {strategy.__class__.__name__} 执行失败: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
-    # 业务域分类关键词（与 html_generator._get_group 保持一致）
-    _DOMAIN_RULES = [
-        ("hero",     ['hero', 'character', 'char_']),
-        ("skill",    ['skill', 'ability', 'spell', 'buff', 'talent']),
-        ("battle",   ['battle', 'fight', 'pvp', 'war', 'combat', 'army']),
-        ("item",     ['item', 'equip', 'prop',
-         'goods', 'material', 'resource']),
-        ("building", ['building', 'construct', 'castle', 'city']),
-        ("quest",    ['quest', 'task', 'mission', 'chapter', 'stage']),
-        ("alliance", ['alliance', 'guild', 'union', 'clan', 'legion']),
-        ("monster",  ['monster', 'enemy', 'npc', 'mob', 'boss', 'creature']),
-        ("reward",   ['reward', 'drop', 'loot', 'prize', 'chest', 'gift']),
-        ("world",    ['map', 'world', 'terrain', 'region', 'area', 'field']),
-        ("social",   ['mail', 'chat', 'message', 'notice', 'friend']),
-        ("config",   ['config', 'setting',
-         'param', 'const', 'global', 'system']),
-    ]
+    @staticmethod
+    def _assign_domain_label(table: TableSchema):
+        """根据表名自动分配业务域标签（使用统一规则）"""
+        table.domain_label = classify_domain(table.name)
 
-    def _assign_domain_label(self, table: TableSchema):
-        """根据表名自动分配业务域标签"""
-        name_lower = table.name.lower()
-        for label, keywords in self._DOMAIN_RULES:
-            if any(kw in name_lower for kw in keywords):
-                table.domain_label = label
-                return
-        table.domain_label = "other"
+    @staticmethod
+    def _diff_columns(old_table: TableSchema,
+                      new_table: TableSchema) -> List[Tuple[str, str]]:
+        """
+        比对新旧表的列差异，返回 [(change_type, details), ...] 列表。
+
+        change_type: added_columns | removed_columns | type_changed
+        """
+        old_cols = {c['name']: c for c in old_table.columns}
+        new_cols = {c['name']: c for c in new_table.columns}
+
+        old_names = set(old_cols.keys())
+        new_names = set(new_cols.keys())
+
+        changes: List[Tuple[str, str]] = []
+
+        added = new_names - old_names
+        if added:
+            changes.append(
+                ("added_columns",
+                 f"新增列: {', '.join(sorted(added))}"))
+
+        removed = old_names - new_names
+        if removed:
+            changes.append(
+                ("removed_columns",
+                 f"删除列: {', '.join(sorted(removed))}"))
+
+        # 类型变更
+        type_changes = []
+        for col_name in old_names & new_names:
+            old_dtype = old_cols[col_name].get('dtype', '?')
+            new_dtype = new_cols[col_name].get('dtype', '?')
+            if old_dtype != new_dtype:
+                type_changes.append(
+                    f"{col_name}: {old_dtype}→{new_dtype}")
+        if type_changes:
+            changes.append(
+                ("type_changed",
+                 f"类型变更: {', '.join(type_changes)}"))
+
+        return changes
+
+    @staticmethod
+    def _fuse_cross_strategy(relations):
+        """
+        跨策略置信度融合: 同一列对被多个策略发现时，
+        使用 merged = 1 - prod(1 - conf_i) 提升置信度。
+        保留置信度最高的那条关系记录，更新其置信度。
+        """
+        from collections import defaultdict
+        col_pair_groups = defaultdict(list)
+        for rel in relations:
+            key = tuple(sorted([
+                f"{rel.from_table}.{rel.from_column}",
+                f"{rel.to_table}.{rel.to_column}"
+            ]))
+            col_pair_groups[key].append(rel)
+
+        result = []
+        for key, rels in col_pair_groups.items():
+            methods = {r.discovery_method for r in rels}
+            if len(methods) > 1:
+                # 多策略印证: 融合置信度
+                product = 1.0
+                for r in rels:
+                    product *= (1.0 - r.confidence)
+                merged_conf = min(0.98, 1.0 - product)
+                # 保留最高优先级的关系记录
+                best = max(rels, key=lambda r: r.confidence)
+                best.confidence = round(merged_conf, 2)
+                best.evidence += f" [fused: {','.join(sorted(methods))}]"
+                result.append(best)
+            else:
+                # 单策略: 保留最高置信度
+                result.append(max(rels, key=lambda r: r.confidence))
+        return result
 
     def _deduplicate_relations(self, relations):
         # Step 1: 每对列只保留最高置信度
@@ -296,8 +417,15 @@ class GraphBuilder:
             else:
                 seen[key] = rel
 
-        # Step 2: 每对表之间只保留 top-N 关系（避免同类信号重复）
-        _MAX_PER_TABLE_PAIR = 3
+        # Step 2: 每对表之间只保留 top-N 关系
+        # 优先保留 naming_convention / abbreviation 发现的关系
+        _MAX_PER_TABLE_PAIR = 2
+        _METHOD_PRIORITY = {
+            'naming_convention': 3,
+            'abbreviation': 2,
+            'containment': 1,
+            'transitive': 0,
+        }
         from collections import defaultdict
         pair_buckets = defaultdict(list)
         for rel in seen.values():
@@ -306,7 +434,10 @@ class GraphBuilder:
 
         result = []
         for rels in pair_buckets.values():
-            rels.sort(key=lambda r: r.confidence, reverse=True)
+            rels.sort(key=lambda r: (
+                _METHOD_PRIORITY.get(r.discovery_method, 0),
+                r.confidence
+            ), reverse=True)
             result.extend(rels[:_MAX_PER_TABLE_PAIR])
         return result
 

@@ -15,7 +15,7 @@ Phase 1: 包含度检测
 
 import os
 import re
-from typing import List, Optional, Dict, Tuple, Set
+from typing import List, Optional, Dict, Tuple, Set, FrozenSet
 from collections import defaultdict
 
 from indexer.models import SchemaGraph, TableSchema, RelationEdge
@@ -44,7 +44,9 @@ _ID_KEYWORDS = frozenset([
 _MAX_CANDIDATES_PER_TABLE = 80
 
 # 两列至少要有这么多交集值才判定匹配（防止小样本噪声）
-_MIN_INTERSECTION = 2
+_MIN_INTERSECTION = 5
+# ID-like 列可放宽到此值
+_MIN_INTERSECTION_ID_LIKE = 3
 
 # 复合值列名后缀——含此后缀时优先展开复合值
 _COMPOUND_SUFFIXES = frozenset([
@@ -77,18 +79,31 @@ class ContainmentDiscovery(RelationDiscoveryStrategy):
     # 主入口
     # ------------------------------------------------------------------
 
-    def discover(self, graph: SchemaGraph) -> List[RelationEdge]:
-        """发现基于包含度的关系"""
+    def discover(self, graph: SchemaGraph,
+                 changed_tables: Optional[Set[str]] = None) -> List[RelationEdge]:
+        """发现基于包含度的关系。
+        changed_tables 非 None 时只检查涉及这些表的列对（增量模式）。"""
         tables = list(graph.tables.values())
         if len(tables) < 2:
             return []
 
-        # 一次性构建关系索引 → O(1) 查重
         rel_index = self._build_relation_index(graph)
 
-        # 1. 收集候选列 & 标准化值
+        # 1. 收集候选列 & 标准化值（始终收集全部表，用于交叉匹配）
         candidate_columns = self._collect_candidates(tables)
         self.logger.info(f"[Phase 1] 找到 {len(candidate_columns)} 个候选键列")
+
+        # 增量模式：标记哪些候选列属于变更表
+        changed_col_indices: Optional[FrozenSet[int]] = None
+        if changed_tables is not None:
+            changed_col_indices = frozenset(
+                idx for idx, c in enumerate(candidate_columns)
+                if c['table'] in changed_tables
+            )
+            self.logger.info(
+                f"[Phase 1] 增量模式: {len(changed_tables)} 个变更表, "
+                f"{len(changed_col_indices)} 个候选列需检查"
+            )
 
         # 2. 构建倒排索引：value → [col_info_index, ...]
         inverted = defaultdict(list)
@@ -96,17 +111,20 @@ class ContainmentDiscovery(RelationDiscoveryStrategy):
             for v in col_info['values']:
                 inverted[v].append(idx)
 
-        # 3. 基于倒排索引找到共享值的列对，只比较这些
+        # 3. 基于倒排索引找到共享值的列对
         pair_shared: Dict[Tuple[int, int], int] = defaultdict(int)
         for indices in inverted.values():
             if len(indices) > 200:
-                # 一个值出现在 200+ 列中，很可能是通用枚举（0/1/true），跳过
                 continue
             for i in range(len(indices)):
                 for j in range(i + 1, len(indices)):
                     a, b = indices[i], indices[j]
                     if a > b:
                         a, b = b, a
+                    # 增量模式：跳过两端都不是变更表的列对
+                    if changed_col_indices is not None:
+                        if a not in changed_col_indices and b not in changed_col_indices:
+                            continue
                     pair_shared[(a, b)] += 1
 
         self.logger.info(
@@ -117,16 +135,26 @@ class ContainmentDiscovery(RelationDiscoveryStrategy):
         # 4. 对候选列对做精确包含度计算
         relations = []
         for (i, j), shared_count in pair_shared.items():
-            if shared_count < _MIN_INTERSECTION:
-                continue
-
             col_a = candidate_columns[i]
             col_b = candidate_columns[j]
+
+            # 动态交集阈值: ID-like 列可放宽
+            min_isect = _MIN_INTERSECTION
+            if col_a.get('is_id_like') or col_b.get('is_id_like'):
+                min_isect = _MIN_INTERSECTION_ID_LIKE
+            if shared_count < min_isect:
+                continue
 
             if col_a['table'] == col_b['table']:
                 continue
 
-            result = self._calc_containment(col_a, col_b)
+            # 自适应包含度阈值: ID-like 列对 PK 的引用可降低
+            effective_threshold = self.containment_threshold
+            if ((col_a.get('is_id_like') and col_b.get('is_pk')) or
+                    (col_b.get('is_id_like') and col_a.get('is_pk'))):
+                effective_threshold = min(effective_threshold, 0.70)
+
+            result = self._calc_containment(col_a, col_b, effective_threshold)
             if not result['is_match']:
                 continue
 
@@ -272,32 +300,64 @@ class ContainmentDiscovery(RelationDiscoveryStrategy):
 
     def _adjust_confidence(self, col_a: Dict, col_b: Dict,
                            base_conf: float) -> float:
-        """校准置信度：惩罚小整数范围、通用列名、PK 引用其他表的巧合匹配"""
-        penalty = 0.0
+        """校准置信度：类型兼容性、小整数碰撞、通用列名、PK 巧合匹配"""
+        conf = base_conf
+        has_naming = self._has_naming_evidence(col_a, col_b)
 
-        # 惩罚1：双方都是小密集整数范围（1-N 自然重叠）
-        if self._is_small_int_range(col_a) and self._is_small_int_range(col_b):
-            penalty += 0.20
+        # 类型兼容性检查
+        dtype_a = col_a.get('dtype', 'unknown')
+        dtype_b = col_b.get('dtype', 'unknown')
+        if dtype_a == dtype_b and dtype_a != 'unknown':
+            conf += 0.05
+        elif not self._dtypes_compatible(dtype_a, dtype_b):
+            if not (col_a.get('is_id_like') or col_b.get('is_id_like')):
+                conf -= 0.15
 
-        # 惩罚2：双方列名都是通用名（主键/编号/等级 等，无语义信息）
+        a_small = self._is_small_int_range(col_a)
+        b_small = self._is_small_int_range(col_b)
+
+        # 惩罚1：双方都是小密集整数范围（乘法惩罚）
+        if a_small and b_small:
+            if not has_naming:
+                # 双方值域 < 50 且无命名证据 → 极高碰撞风险
+                a_span = (col_a.get('max_val', 0) - col_a.get('min_val', 0))
+                b_span = (col_b.get('max_val', 0) - col_b.get('min_val', 0))
+                if a_span < 50 and b_span < 50:
+                    conf *= 0.30
+                else:
+                    conf *= 0.50
+            else:
+                conf -= 0.10
+
+        # 惩罚2：连续自然数序列检测（1,2,...,N）
+        if self._is_consecutive_sequence(col_a) or self._is_consecutive_sequence(col_b):
+            if not has_naming:
+                conf *= 0.60
+
+        # 惩罚3：通用列名
         if (self._is_generic_name(col_a['column']) and
                 self._is_generic_name(col_b['column'])):
-            penalty += 0.15
+            conf *= 0.80
 
-        # 惩罚3：PK 列且值域小 → PK 通常是被引用方，不应作为 from 去匹配
-        # 当双方都是小值域 PK 时，碰撞概率极高
+        # 惩罚4：PK 碰撞
         a_is_small_pk = col_a.get('is_pk') and col_a['unique_count'] < self.small_pk_threshold
         b_is_small_pk = col_b.get('is_pk') and col_b['unique_count'] < self.small_pk_threshold
         if a_is_small_pk and b_is_small_pk:
-            penalty += 0.30  # 双方都是小 PK → 几乎必然是巧合
+            conf *= 0.25
         elif a_is_small_pk or b_is_small_pk:
-            penalty += 0.20  # 一方是小 PK → 多半是巧合
+            # 一方是小 PK：要求命名证据，否则大幅降权
+            if not has_naming:
+                small_pk = col_a if a_is_small_pk else col_b
+                if small_pk['unique_count'] < 30:
+                    conf *= 0.40
+                else:
+                    conf *= 0.60
 
         # 加分：列名包含对方表名 → 强 FK 信号
-        if self._has_naming_evidence(col_a, col_b):
-            penalty -= 0.10
+        if has_naming:
+            conf = min(conf + 0.10, base_conf + 0.05)
 
-        return round(max(0.05, base_conf - penalty), 2)
+        return round(max(0.05, conf), 2)
 
     @staticmethod
     def _is_small_int_range(col_info: Dict) -> bool:
@@ -308,9 +368,34 @@ class ContainmentDiscovery(RelationDiscoveryStrategy):
             return False
         span = max_v - min_v
         unique = col_info['unique_count']
-        # 小范围 + 密集 + 最大值不超 1000 → 高碰撞风险
         return (0 < span < 300 and 0 < unique < 200
                 and max_v < 1000 and (unique / span) > 0.3)
+
+    @staticmethod
+    def _is_consecutive_sequence(col_info: Dict) -> bool:
+        """检测值域是否为近似连续自然数序列 (1,2,3,...,N)"""
+        min_v = col_info.get('min_val')
+        max_v = col_info.get('max_val')
+        if min_v is None or max_v is None:
+            return False
+        unique = col_info['unique_count']
+        span = max_v - min_v
+        if span <= 0 or unique < 3:
+            return False
+        # unique 值几乎填满整个 span → 连续序列
+        density = unique / (span + 1)
+        return density > 0.85 and min_v >= 0 and max_v < 200
+
+    @staticmethod
+    def _dtypes_compatible(dtype_a: str, dtype_b: str) -> bool:
+        """检查两列类型是否兼容（用于 FK 匹配）"""
+        if dtype_a == dtype_b:
+            return True
+        numeric = {'int', 'float'}
+        if dtype_a in numeric and dtype_b in numeric:
+            return True
+        # str vs int/float 不兼容（str 列不应匹配 int PK）
+        return False
 
     @staticmethod
     def _is_generic_name(col_name: str) -> bool:
@@ -338,8 +423,12 @@ class ContainmentDiscovery(RelationDiscoveryStrategy):
     # 包含度计算
     # ------------------------------------------------------------------
 
-    def _calc_containment(self, col_a: Dict, col_b: Dict) -> Dict:
+    def _calc_containment(self, col_a: Dict, col_b: Dict,
+                          containment_threshold: float = None) -> Dict:
         """计算包含度"""
+        if containment_threshold is None:
+            containment_threshold = self.containment_threshold
+
         values_a = col_a['values']
         values_b = col_b['values']
 
@@ -353,7 +442,7 @@ class ContainmentDiscovery(RelationDiscoveryStrategy):
             return result
 
         intersection = values_a & values_b
-        if len(intersection) < _MIN_INTERSECTION:
+        if len(intersection) < _MIN_INTERSECTION_ID_LIKE:
             return result
 
         union_size = len(values_a | values_b)
@@ -367,7 +456,7 @@ class ContainmentDiscovery(RelationDiscoveryStrategy):
                             and col_b.get('is_id_like')) else 0
 
         # A 是 B 的子集
-        if (result['containment_a'] >= self.containment_threshold and
+        if (result['containment_a'] >= containment_threshold and
                 len(values_a) <= len(values_b) * 0.95):
             result['is_match'] = True
             result['match_type'] = 'fk_content_subset'
@@ -382,7 +471,7 @@ class ContainmentDiscovery(RelationDiscoveryStrategy):
             )
 
         # B 是 A 的子集
-        elif (result['containment_b'] >= self.containment_threshold and
+        elif (result['containment_b'] >= containment_threshold and
               len(values_b) <= len(values_a) * 0.95):
             result['is_match'] = True
             result['match_type'] = 'fk_content_subset'

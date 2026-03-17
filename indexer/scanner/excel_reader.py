@@ -319,6 +319,7 @@ class ExcelReader:
     def _to_native(val) -> Any:
         """将 numpy/pandas 类型转为 Python 原生类型"""
         import numpy as np
+        import datetime as _dt
         if isinstance(val, (np.integer,)):
             return int(val)
         if isinstance(val, (np.floating,)):
@@ -332,4 +333,11 @@ class ExcelReader:
             return val.tolist()
         if pd.isna(val):
             return None
+        # datetime / time / Timestamp → 字符串（避免 JSON 序列化失败）
+        if isinstance(val, (pd.Timestamp, _dt.datetime)):
+            return val.isoformat()
+        if isinstance(val, (_dt.time, _dt.date)):
+            return str(val)
+        if isinstance(val, _dt.timedelta):
+            return str(val)
         return val

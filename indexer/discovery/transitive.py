@@ -7,7 +7,7 @@ A->B 且 B->C，则推断 A 可能关联 C
 """
 
 from collections import defaultdict
-from typing import List, Set
+from typing import List, Set, Optional
 from indexer.models import SchemaGraph, RelationEdge
 
 from .base import RelationDiscoveryStrategy
@@ -16,12 +16,11 @@ from .base import RelationDiscoveryStrategy
 class TransitiveDiscovery(RelationDiscoveryStrategy):
     """传递关系推断策略"""
 
-    # 只从高置信度关系构建推断路径
     _MIN_SOURCE_CONFIDENCE = 0.65
-    # 传递关系上限（按置信度排序取 top-N）
     _MAX_TRANSITIVE = 500
 
-    def discover(self, graph: SchemaGraph) -> List[RelationEdge]:
+    def discover(self, graph: SchemaGraph,
+                 changed_tables: Optional[Set[str]] = None) -> List[RelationEdge]:
         """推断传递关系（仅基于高置信度直接关系）"""
         # O(1) 直接关系查重
         direct_pairs: Set[tuple] = set()
