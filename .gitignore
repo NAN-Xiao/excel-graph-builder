@@ -14,6 +14,11 @@ build_temp/
 .vscode/
 .idea/
 
+# 构建产出
+data/indexer/
+graph/
+html/
+
 # 日志
 *.log
 
