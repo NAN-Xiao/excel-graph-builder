@@ -126,31 +126,41 @@ def export_relation_graph(graph: SchemaGraph,
         if rel.confidence < min_confidence:
             continue
 
+        evidence = _compute_shared_values(graph, rel)
+        evidence_desc = rel.evidence or ""
+
+        neighbor_base = {
+            "join": f"{rel.from_table}.{rel.from_column} = {rel.to_table}.{rel.to_column}",
+            "confidence": round(rel.confidence, 3),
+            "relation_type": rel.relation_type,
+            "method": rel.discovery_method,
+        }
+        if evidence:
+            neighbor_base["evidence"] = evidence
+        if evidence_desc:
+            neighbor_base["evidence_desc"] = evidence_desc
+
         # outgoing: from_table → to_table
         if rel.from_table in adj:
-            adj[rel.from_table]["neighbors"].append({
+            out_entry = {
                 "table": rel.to_table,
                 "direction": "outgoing",
-                "join": f"{rel.from_table}.{rel.from_column} = {rel.to_table}.{rel.to_column}",
                 "local_column": rel.from_column,
                 "remote_column": rel.to_column,
-                "confidence": round(rel.confidence, 3),
-                "relation_type": rel.relation_type,
-                "method": rel.discovery_method,
-            })
+                **neighbor_base,
+            }
+            adj[rel.from_table]["neighbors"].append(out_entry)
 
         # incoming: to_table ← from_table
         if rel.to_table in adj:
-            adj[rel.to_table]["neighbors"].append({
+            in_entry = {
                 "table": rel.from_table,
                 "direction": "incoming",
-                "join": f"{rel.from_table}.{rel.from_column} = {rel.to_table}.{rel.to_column}",
                 "local_column": rel.to_column,
                 "remote_column": rel.from_column,
-                "confidence": round(rel.confidence, 3),
-                "relation_type": rel.relation_type,
-                "method": rel.discovery_method,
-            })
+                **neighbor_base,
+            }
+            adj[rel.to_table]["neighbors"].append(in_entry)
 
     # 按置信度排序邻居
     for info in adj.values():
@@ -374,8 +384,19 @@ def export_table_profiles(graph: SchemaGraph,
             searchable_parts.extend(cn_names)
             cn_synonyms = _get_cn_synonyms(name)
             searchable_parts.extend(cn_synonyms)
-        # 列名
-        searchable_parts.extend(c['name'] for c in table.columns)
+        # 列名 + 缩写展开
+        try:
+            from indexer.discovery.game_dictionary import GAME_ABBREVIATIONS
+        except ImportError:
+            GAME_ABBREVIATIONS = {}
+        for c in table.columns:
+            col_name = c['name']
+            searchable_parts.append(col_name)
+            # 展开缩写：atk→attack, hp→hitpoint health 等
+            stem = col_name.lower().split('_')
+            for part in stem:
+                if part in GAME_ABBREVIATIONS:
+                    searchable_parts.extend(GAME_ABBREVIATIONS[part])
         # 列语义描述
         if pk:
             searchable_parts.append(f"主键:{pk}")
@@ -401,9 +422,15 @@ def export_table_profiles(graph: SchemaGraph,
         searchable_text = " ".join(dict.fromkeys(
             p for p in searchable_parts if p))  # 去重保序
 
+        out_table_names = [r.to_table for r in outgoing.get(name, [])][:5]
+        in_table_names = [r.from_table for r in incoming.get(name, [])][:5]
+        description = _generate_table_description(
+            name, table, domain, fk_map, out_table_names, in_table_names)
+
         profile = {
             "table_name": name,
             "domain": table.domain_label or "other",
+            "description": description,
             "file": Path(table.file_path).name,
             "sheet": table.sheet_name,
             "row_count": table.row_count,
@@ -426,8 +453,324 @@ def export_table_profiles(graph: SchemaGraph,
 
 
 # ──────────────────────────────────────────────────────────
+# 4. analysis.json — 图算法分析结果
+# ──────────────────────────────────────────────────────────
+
+def export_analysis(analysis, output_path: Optional[str] = None) -> dict:
+    """
+    将 AnalysisResult 导出为机器可读的 JSON，供 RAG 召回阶段使用。
+
+    包含:
+    - centrality: {table_name: score} — PageRank 中心性 (0-100)，用于排序加权
+    - modules: [[table, ...], ...] — 社区聚类，用于同模块加分
+    - orphans: [table, ...] — 孤立表（无关联），可降权或跳过
+    - cycles: [[table, ...], ...] — 循环依赖
+    - critical_path: [table, ...] — 最长依赖链
+    """
+    if analysis is None:
+        return {}
+
+    data = {
+        "_meta": {
+            "description": "图算法分析结果，供 RAG 召回排序使用。",
+            "centrality_range": "0-100，越高表示该表被越多其他表引用（枢纽表）",
+            "modules_description": "Label Propagation 社区发现，同一数组内的表属于同一业务模块",
+        },
+        "centrality": analysis.centrality or {},
+        "modules": [sorted(m) for m in (analysis.modules or [])],
+        "orphans": sorted(analysis.orphans or []),
+        "cycles": analysis.cycles or [],
+        "critical_path": analysis.critical_path or [],
+    }
+
+    if output_path:
+        _write_json(output_path, data)
+
+    return data
+
+
+# ──────────────────────────────────────────────────────────
+# 5. value_index.json — 跨表值反查索引
+# ──────────────────────────────────────────────────────────
+
+def export_value_index(graph: SchemaGraph,
+                       output_path: Optional[str] = None,
+                       min_tables: int = 2,
+                       max_entries: int = 5000) -> dict:
+    """
+    导出跨表共享值的反查索引。
+
+    扫描所有 FK 候选列和枚举列的 sample_values，
+    收集出现在 ≥ min_tables 张表中的值，映射到 (table, column) 列表。
+
+    用途: RAG 回答 "ID=1001 出现在哪些表" / "camp=3 的英雄在哪" 类查询。
+    """
+    val_map: Dict[str, List[Tuple[str, str]]] = defaultdict(list)
+
+    for name, table in graph.tables.items():
+        for col in table.columns:
+            if not col.get('is_fk_candidate') and col['name'] not in (table.enum_columns or {}):
+                continue
+            for v in (col.get('sample_values') or []):
+                key = str(v)
+                if not key or key in ('', 'None', 'nan'):
+                    continue
+                val_map[key].append((name, col['name']))
+
+    # 去重同表同列，只保留跨表值
+    cross_table: Dict[str, List[dict]] = {}
+    for val, locations in val_map.items():
+        unique = list({(t, c) for t, c in locations})
+        tables_set = {t for t, _ in unique}
+        if len(tables_set) >= min_tables:
+            cross_table[val] = [{"table": t, "column": c} for t, c in sorted(unique)]
+
+    # 按出现表数降序，限制条目总数
+    sorted_entries = sorted(cross_table.items(), key=lambda x: -len(x[1]))
+    if len(sorted_entries) > max_entries:
+        sorted_entries = sorted_entries[:max_entries]
+
+    entries = {k: v for k, v in sorted_entries}
+    result = {
+        "_meta": {
+            "total_values": len(entries),
+            "min_tables": min_tables,
+            "description": (
+                "跨表共享值反查索引。"
+                "key 是值的字符串形式，value 是出现该值的 (table, column) 列表。"
+                "仅包含出现在 ≥{} 张表中的值。"
+                "数据来源: FK 候选列和枚举列的 sample_values（≤200 行采样）。"
+            ).format(min_tables),
+        },
+        "values": entries,
+    }
+
+    if output_path:
+        _write_json(output_path, result)
+
+    return result
+
+
+# ──────────────────────────────────────────────────────────
+# 6. domain_graph.json — 域级关系图
+# ──────────────────────────────────────────────────────────
+
+def export_domain_graph(graph: SchemaGraph,
+                        output_path: Optional[str] = None,
+                        min_confidence: float = 0.5) -> dict:
+    """
+    将表级关系聚合为域级关系图。
+
+    用途: RAG 意图提取时快速了解 "哪些业务域之间有关联、关联有多强"，
+    无需遍历数千条表级关系。
+    """
+    # 域 → 表名列表
+    domain_tables: Dict[str, List[str]] = defaultdict(list)
+    for name, table in graph.tables.items():
+        domain_tables[table.domain_label or "other"].append(name)
+
+    # 域 → 域 关系聚合
+    pair_stats: Dict[Tuple[str, str], List[float]] = defaultdict(list)
+    for rel in graph.relations:
+        if rel.confidence < min_confidence:
+            continue
+        d_from = graph.tables[rel.from_table].domain_label or "other" if rel.from_table in graph.tables else "other"
+        d_to = graph.tables[rel.to_table].domain_label or "other" if rel.to_table in graph.tables else "other"
+        if d_from == d_to:
+            continue
+        key = (min(d_from, d_to), max(d_from, d_to))
+        pair_stats[key].append(rel.confidence)
+
+    domains = {}
+    for d, tables in sorted(domain_tables.items()):
+        cn_names = _DOMAIN_CN_NAMES.get(d, [])
+        domains[d] = {
+            "cn_name": cn_names[0] if cn_names else d,
+            "table_count": len(tables),
+            "tables": sorted(tables),
+        }
+
+    domain_relations = []
+    for (d1, d2), confs in sorted(pair_stats.items(), key=lambda x: -len(x[1])):
+        domain_relations.append({
+            "from": d1,
+            "to": d2,
+            "relation_count": len(confs),
+            "avg_confidence": round(sum(confs) / len(confs), 3),
+            "max_confidence": round(max(confs), 3),
+        })
+
+    result = {
+        "_meta": {
+            "domain_count": len(domains),
+            "cross_domain_pairs": len(domain_relations),
+            "description": (
+                "域级关系图。domains 列出每个业务域包含的表；"
+                "domain_relations 列出跨域关系的统计（同域内关系已排除）。"
+            ),
+        },
+        "domains": domains,
+        "domain_relations": domain_relations,
+    }
+
+    if output_path:
+        _write_json(output_path, result)
+
+    return result
+
+
+# ──────────────────────────────────────────────────────────
+# 7. enum_cross_ref.json — 枚举值交叉索引
+# ──────────────────────────────────────────────────────────
+
+def export_enum_cross_ref(graph: SchemaGraph,
+                          output_path: Optional[str] = None,
+                          min_overlap: float = 0.5,
+                          min_shared: int = 2) -> dict:
+    """
+    找出跨表共享相同枚举空间的列对。
+
+    多张表可能包含语义相同的枚举列（如 hero.quality 和 item.quality 取值都是 1-5），
+    这种关联不会被 FK 检测捕获，但对 RAG 回答 "品质分哪几种" 类查询很有价值。
+
+    Args:
+        graph: 图谱
+        min_overlap: 最小重叠率（交集/并集），低于此阈值的不导出
+        min_shared: 至少共享多少个值
+    """
+    # 收集所有枚举列的值集合
+    enum_data: List[Tuple[str, str, Set[str]]] = []
+    for name, table in graph.tables.items():
+        for col_name, vals in (table.enum_columns or {}).items():
+            str_vals = {str(v) for v in vals if str(v) not in ('', 'None', 'nan')}
+            if len(str_vals) >= 2:
+                enum_data.append((name, col_name, str_vals))
+
+    # 按列名分组比对（同名列更可能是同一枚举空间）
+    col_groups: Dict[str, List[Tuple[str, str, Set[str]]]] = defaultdict(list)
+    for name, col_name, vals in enum_data:
+        col_groups[col_name].append((name, col_name, vals))
+
+    cross_refs = []
+
+    for col_name, group in col_groups.items():
+        if len(group) < 2:
+            continue
+        # 计算这组列的值交集
+        all_vals = [vals for _, _, vals in group]
+        shared = set.intersection(*all_vals)
+        union = set.union(*all_vals)
+        if len(shared) < min_shared:
+            continue
+        overlap = len(shared) / len(union) if union else 0
+        if overlap < min_overlap:
+            continue
+
+        tables = sorted(set(name for name, _, _ in group))
+        shared_sorted = sorted(shared)
+        cross_refs.append({
+            "column_name": col_name,
+            "tables": tables,
+            "shared_values": shared_sorted[:20],
+            "shared_count": len(shared),
+            "total_unique": len(union),
+            "overlap_ratio": round(overlap, 3),
+        })
+
+    cross_refs.sort(key=lambda x: (-x["overlap_ratio"], -x["shared_count"]))
+
+    result = {
+        "_meta": {
+            "total_groups": len(cross_refs),
+            "min_overlap": min_overlap,
+            "min_shared": min_shared,
+            "description": (
+                "枚举值交叉索引。找出跨表共享相同枚举空间的列。"
+                "这些列可能代表相同的业务概念（如品质、阵营），"
+                "但未被 FK 关系捕获。overlap_ratio = 交集/并集。"
+            ),
+        },
+        "cross_refs": cross_refs,
+    }
+
+    if output_path:
+        _write_json(output_path, result)
+
+    return result
+
+
+# ──────────────────────────────────────────────────────────
 # helpers
 # ──────────────────────────────────────────────────────────
+
+def _generate_table_description(name: str, table, domain: str,
+                                fk_map: Dict, out_tables: List[str],
+                                in_tables: List[str]) -> str:
+    """基于表名、域标签、列名、关系自动生成一句中文描述。"""
+    cn_names = _DOMAIN_CN_NAMES.get(domain, [])
+    domain_cn = cn_names[0] if cn_names else domain
+
+    synonyms = _get_cn_synonyms(name)
+    table_cn = synonyms[0] if synonyms else domain_cn
+
+    col_names = [c['name'] for c in table.columns[:10]]
+    col_str = ", ".join(col_names)
+    if len(table.columns) > 10:
+        col_str += f" 等{len(table.columns)}列"
+
+    size_label = "小表" if table.row_count <= 200 else ("中表" if table.row_count <= 2000 else "大表")
+
+    parts = [f"{table_cn}相关配置"]
+
+    if table.primary_key:
+        parts.append(f"主键 {table.primary_key}")
+
+    parts.append(f"含 {col_str}")
+
+    parts.append(f"{size_label}({table.row_count}行)")
+
+    if out_tables:
+        parts.append(f"引用 {', '.join(out_tables[:5])}")
+    if in_tables:
+        parts.append(f"被 {', '.join(in_tables[:5])} 引用")
+
+    return "，".join(parts)
+
+
+def _compute_shared_values(graph: SchemaGraph, rel: RelationEdge,
+                           max_samples: int = 5) -> Dict:
+    """计算一条关系两端列的共享值样本。"""
+    from_table = graph.tables.get(rel.from_table)
+    to_table = graph.tables.get(rel.to_table)
+    if not from_table or not to_table:
+        return {}
+
+    from_sv = set()
+    for c in from_table.columns:
+        if c['name'] == rel.from_column and c.get('sample_values'):
+            from_sv = {str(v) for v in c['sample_values']}
+            break
+
+    to_sv = set()
+    for c in to_table.columns:
+        if c['name'] == rel.to_column and c.get('sample_values'):
+            to_sv = {str(v) for v in c['sample_values']}
+            break
+
+    if not from_sv or not to_sv:
+        return {}
+
+    shared = sorted(from_sv & to_sv)
+    if not shared:
+        return {}
+
+    return {
+        "shared_values": shared[:max_samples],
+        "shared_count": len(shared),
+        "from_total": len(from_sv),
+        "to_total": len(to_sv),
+    }
+
 
 def _write_json(output_path: str, data: dict):
     p = Path(output_path)

@@ -134,17 +134,35 @@ def export_llm_chunks(graph: SchemaGraph,
         col_count = len(table.columns)
         row_count = table.row_count
 
-        # 列摘要
+        # 列摘要（含值域信息）
         fk_map = {fc: (tt, tc) for fc, tt, tc, _, _ in outgoing.get(name, [])}
         col_parts = []
         for col in table.columns:
             cn = col['name']
             dt = col.get('dtype', '?')
+            sv = col.get('sample_values', [])
+
             if cn in fk_map:
                 tt, tc = fk_map[cn]
-                col_parts.append(f"{cn}({dt})→{tt}.{tc}")
+                part = f"{cn}({dt})→{tt}.{tc}"
+            elif cn == pk and sv:
+                if dt == 'int' and len(sv) >= 2:
+                    part = f"{cn}({dt})[{sv[0]}~{sv[-1]},共{len(sv)}]"
+                else:
+                    part = f"{cn}({dt})"
+            elif cn in (table.enum_columns or {}):
+                evals = table.enum_columns[cn]
+                text_vals = [str(v) for v in evals[:4]
+                             if not str(v).replace('.', '').replace('-', '').isdigit()]
+                if text_vals:
+                    part = f"{cn}({dt})[{','.join(text_vals)}]"
+                elif len(evals) <= 10:
+                    part = f"{cn}({dt})[{','.join(str(v) for v in evals[:6])}]"
+                else:
+                    part = f"{cn}({dt})"
             else:
-                col_parts.append(f"{cn}({dt})")
+                part = f"{cn}({dt})"
+            col_parts.append(part)
         if len(col_parts) > 25:
             col_str = ", ".join(col_parts[:25]) + f", ...+{len(col_parts)-25}列"
         else:

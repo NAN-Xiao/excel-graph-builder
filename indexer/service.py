@@ -117,6 +117,9 @@ class IndexService:
                 export_relation_graph, export_join_paths,
                 export_table_profiles,
                 export_cell_locator,
+                export_analysis,
+                export_value_index, export_domain_graph,
+                export_enum_cross_ref,
             )
             storage_dir = Path(self.storage.data_dir)
 
@@ -158,11 +161,29 @@ class IndexService:
             cell_loc_path = storage_dir / "cell_locator.json"
             export_cell_locator(self.current_graph, str(cell_loc_path))
 
+            # 9. analysis.json — 图算法分析结果（centrality/modules/orphans）
+            analysis_path = storage_dir / "analysis.json"
+            export_analysis(analysis, str(analysis_path))
+
+            # 10. value_index.json — 跨表值反查索引
+            value_idx_path = storage_dir / "value_index.json"
+            export_value_index(self.current_graph, str(value_idx_path))
+
+            # 11. domain_graph.json — 域级关系图
+            domain_graph_path = storage_dir / "domain_graph.json"
+            export_domain_graph(self.current_graph, str(domain_graph_path))
+
+            # 12. enum_cross_ref.json — 枚举值交叉索引
+            enum_xref_path = storage_dir / "enum_cross_ref.json"
+            export_enum_cross_ref(self.current_graph, str(enum_xref_path))
+
             self.logger.success(
                 f"LLM/RAG 资产已导出 → {summary_path.name}, "
                 f"{jsonl_path.name}, {col_idx_path.name}, "
                 f"{rel_graph_path.name}, {join_path_path.name}, "
-                f"{profiles_path.name}, {cell_loc_path.name}"
+                f"{profiles_path.name}, {cell_loc_path.name}, "
+                f"{analysis_path.name}, {value_idx_path.name}, "
+                f"{domain_graph_path.name}, {enum_xref_path.name}"
             )
         except Exception as e:
             self.logger.error(f"LLM/RAG 资产导出失败: {e}")

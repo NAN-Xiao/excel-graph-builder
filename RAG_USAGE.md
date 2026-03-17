@@ -10,12 +10,16 @@
 |:--|:--|:--|:--|
 | `schema_summary.txt` | 42 KB | 全量表名按域分组，注入 system prompt | **必须** |
 | `column_index.json` | 1.0 MB | 列名→表名倒排索引，精确定位 | **必须** |
-| `llm_chunks.jsonl` | 1.6 MB | 每表一条摘要，向量化召回 | **必须** |
+| `llm_chunks.jsonl` | 1.6 MB | 每表一条摘要（含值域信息），向量化召回 | **必须** |
 | `schema_graph.json` | ~8 MB | 主图谱：表结构+关系+sample_values（持久化截断至30个） | **必须** |
+| `analysis.json` | ~50 KB | 图算法分析：centrality / modules / orphans | 推荐 |
 | `cell_locator.json` | 2.6 MB | 单元格定位：表→文件→行号→列号 | 推荐 |
-| `relation_graph.json` | 21 MB | 邻接表+JOIN 条件（双向） | 可选 |
-| `table_profiles.jsonl` | ~5 MB | 每表富元数据 profile（sample_values 截断至8个） | 可选 |
+| `relation_graph.json` | 21 MB | 邻接表+JOIN 条件+关系证据（双向） | 可选 |
+| `table_profiles.jsonl` | ~5 MB | 每表富元数据 profile + 中文描述 + 缩写展开 searchable_text | 可选 |
 | `join_paths.json` | ~20 MB | 预计算 1 跳直接 JOIN 路径 | 可选 |
+| `value_index.json` | ~1 MB | 跨表共享值反查索引（值→出现的表和列） | 可选 |
+| `domain_graph.json` | ~10 KB | 域级关系图（域→域的聚合关系统计） | 推荐 |
+| `enum_cross_ref.json` | ~20 KB | 枚举值交叉索引（跨表共享枚举空间的列对） | 可选 |
 
 > **v2 瘦身说明：** 相比 v1，`schema_graph.json` 从 52MB 降至 ~8MB（持久化时每列 sample_values 截断为 30 个，内存中关系发现仍使用完整采样）；`table_profiles.jsonl` 从 27MB 降至 ~5MB；`join_paths.json` 从 358MB 降至 ~20MB（默认 1 跳）。
 
@@ -66,6 +70,36 @@ cell_loc_path = DATA / "cell_locator.json"
 if cell_loc_path.exists():
     with open(cell_loc_path, encoding="utf-8") as f:
         CELL_LOCATOR = json.load(f)["tables"]
+
+# 7. 图算法分析结果（推荐）
+CENTRALITY, MODULES = {}, []
+analysis_path = DATA / "analysis.json"
+if analysis_path.exists():
+    with open(analysis_path, encoding="utf-8") as f:
+        _analysis = json.load(f)
+    CENTRALITY = _analysis.get("centrality", {})   # 表名→中心性 0-100
+    MODULES = _analysis.get("modules", [])          # 社区聚类
+
+# 8. 域级关系图（推荐，~10KB）
+DOMAIN_GRAPH = {}
+domain_path = DATA / "domain_graph.json"
+if domain_path.exists():
+    with open(domain_path, encoding="utf-8") as f:
+        DOMAIN_GRAPH = json.load(f)
+
+# 9. 跨表值反查索引（可选）
+VALUE_INDEX = {}
+vidx_path = DATA / "value_index.json"
+if vidx_path.exists():
+    with open(vidx_path, encoding="utf-8") as f:
+        VALUE_INDEX = json.load(f).get("values", {})
+
+# 10. 枚举值交叉索引（可选）
+ENUM_XREF = []
+exref_path = DATA / "enum_cross_ref.json"
+if exref_path.exists():
+    with open(exref_path, encoding="utf-8") as f:
+        ENUM_XREF = json.load(f).get("cross_refs", [])
 ```
 
 加载耗时：首次约 **120ms**，内存占用约 **80MB**（v2 瘦身后）。
@@ -427,11 +461,18 @@ def answer(user_query: str, vector_db, llm_call) -> str:
 
 ### llm_chunks.jsonl — 向量化摘要
 
-每行一个 JSON，共 1559 行：
+每行一个 JSON，共 1559 行。列摘要现在包含值域信息：
 
 ```json
-{"id": "hero", "text": "## 表: hero [hero]\n- 文件: hero.xlsx | sheet: hero\n- 行数: 17 | 列数: 37 | 主键: 键值\n- 列: 键值(int), 英雄名字(str), 英雄品质(int), 英雄主动技能ID(int)→skill.键值, ...\n- 关联: → skill(英雄主动技能ID→键值 @0.77), ← monsterTroop_monsterHero(英雄ID→键值 @0.77)\n- 标注: 中心性:5.2 | 同模块: hero_hero_level, hero_hero_star, ...\n"}
+{"id": "hero", "text": "## 表: hero [hero]\n- 文件: hero.xlsx | sheet: hero\n- 行数: 17 | 列数: 37 | 主键: 键值\n- 列: 键值(int)[1~1000,共17], 英雄名字(str), 英雄品质(int)[2,3,4,5], 英雄主动技能ID(int)→skill.键值, ...\n- 关联: → skill(英雄主动技能ID→键值 @0.77), ← monsterTroop_monsterHero(英雄ID→键值 @0.77)\n- 标注: 中心性:5.2 | 同模块: hero_hero_level, hero_hero_star, ...\n"}
 ```
+
+列值域格式说明：
+- PK 列：`键值(int)[1~1000,共17]` — 值域范围 + 总数
+- 枚举列（文本）：`品质(int)[普通,精英,传说]` — 文本枚举值
+- 枚举列（数值）：`类型(int)[1,2,3,4]` — 数值枚举值
+- FK 列：`技能ID(int)→skill.键值` — 不变，显示引用目标
+- 普通列：`name(str)` — 不变
 
 ### column_index.json — 列名倒排索引
 
@@ -486,6 +527,164 @@ def answer(user_query: str, vector_db, llm_call) -> str:
 [monster] monsterTroop, worldMonster, instanceMonster, ...
 ...
 ```
+
+### relation_graph.json — 邻接表（增强版）
+
+每条邻居关系现在包含 `evidence` 字段（共享值证据）和 `evidence_desc` 字段（可读描述）：
+
+```json
+{
+  "tables": {
+    "hero": {
+      "domain": "hero",
+      "primary_key": "键值",
+      "neighbors": [
+        {
+          "table": "skill",
+          "direction": "outgoing",
+          "join": "hero.英雄主动技能ID = skill.键值",
+          "local_column": "英雄主动技能ID",
+          "remote_column": "键值",
+          "confidence": 0.77,
+          "relation_type": "fk_content_subset",
+          "method": "containment",
+          "evidence": {
+            "shared_values": ["101", "102", "103", "201", "202"],
+            "shared_count": 15,
+            "from_total": 17,
+            "to_total": 120
+          },
+          "evidence_desc": "shared(15): 101,102,103..."
+        }
+      ]
+    }
+  }
+}
+```
+
+`evidence` 字段说明：
+- `shared_values`：两列 sample_values 的交集样本（最多 5 个）
+- `shared_count`：交集总数
+- `from_total` / `to_total`：两端列的 sample_values 总数
+- 当无法计算时（某端列无 sample_values）`evidence` 字段不存在
+
+### table_profiles.jsonl — 富元数据（增强版）
+
+每条 profile 新增 `description` 字段（自动生成的中文描述），`searchable_text` 已包含缩写展开词：
+
+```json
+{
+  "table_name": "hero",
+  "domain": "hero",
+  "description": "英雄相关配置，主键 键值，含 键值, 英雄名字, 英雄品质, ... 等37列，小表(17行)，引用 skill, buff，被 hero_hero_star, monsterTroop_monsterHero 引用",
+  "file": "hero.xlsx",
+  "row_count": 17,
+  "primary_key": "键值",
+  "searchable_text": "hero hero hero 英雄 角色 人物 键值 英雄名字 ... attack hitpoint health ...",
+  "columns": [...],
+  "outgoing_relations": [...],
+  "incoming_relations": [...]
+}
+```
+
+`searchable_text` 增强说明：
+- 列名缩写自动展开：`atk` → 额外加入 `attack`，`hp` → 额外加入 `hitpoint health`
+- 基于 `GAME_ABBREVIATIONS` 词典，覆盖 90+ 个游戏常用缩写
+
+### value_index.json — 跨表值反查索引
+
+```json
+{
+  "_meta": {
+    "total_values": 3200,
+    "min_tables": 2,
+    "description": "跨表共享值反查索引..."
+  },
+  "values": {
+    "101": [
+      {"table": "hero", "column": "英雄主动技能ID"},
+      {"table": "monsterSkill", "column": "技能ID"}
+    ],
+    "1001": [
+      {"table": "hero_hero_star", "column": "消耗道具ID"},
+      {"table": "shop_shop_item", "column": "商品ID"},
+      {"table": "reward_chest", "column": "物品ID"}
+    ]
+  }
+}
+```
+
+仅包含出现在 ≥2 张表中的值。数据来源：FK 候选列和枚举列的 sample_values（≤200 行采样）。
+
+### domain_graph.json — 域级关系图
+
+```json
+{
+  "domains": {
+    "hero": {
+      "cn_name": "英雄",
+      "table_count": 12,
+      "tables": ["hero", "hero_hero_star", "hero_hero_level", ...]
+    },
+    "skill": {
+      "cn_name": "技能",
+      "table_count": 8,
+      "tables": ["skill", "buff", "buff_attribute", ...]
+    }
+  },
+  "domain_relations": [
+    {"from": "hero", "to": "skill", "relation_count": 5, "avg_confidence": 0.85, "max_confidence": 0.92},
+    {"from": "hero", "to": "item",  "relation_count": 3, "avg_confidence": 0.78, "max_confidence": 0.88}
+  ]
+}
+```
+
+`domain_relations` 只包含跨域关系（同域内关系已排除），按 relation_count 降序排列。
+
+### enum_cross_ref.json — 枚举值交叉索引
+
+```json
+{
+  "cross_refs": [
+    {
+      "column_name": "品质",
+      "tables": ["hero", "item", "equip_base"],
+      "shared_values": ["普通", "精英", "传说", "史诗", "神话"],
+      "shared_count": 5,
+      "total_unique": 5,
+      "overlap_ratio": 1.0
+    },
+    {
+      "column_name": "阵营",
+      "tables": ["hero", "monsterTroop"],
+      "shared_values": ["1", "2", "3"],
+      "shared_count": 3,
+      "total_unique": 4,
+      "overlap_ratio": 0.75
+    }
+  ]
+}
+```
+
+找出跨表共享相同枚举空间的列。这些列代表相同的业务概念（如品质、阵营），但未被 FK 关系捕获。`overlap_ratio` = 交集/并集，≥0.5 才纳入。
+
+### analysis.json — 图算法分析
+
+```json
+{
+  "centrality": {"item": 92.1, "hero": 85.3, "skill": 71.8, ...},
+  "modules": [["hero", "hero_hero_star", "hero_skill", ...], ["item", "equip", ...], ...],
+  "orphans": ["unused_config", "old_test_table", ...],
+  "cycles": [["A", "B", "C"], ...],
+  "critical_path": ["hero", "skill", "buff", "buff_attribute"]
+}
+```
+
+- `centrality`：PageRank 中心性 0-100，越高越是枢纽表
+- `modules`：Label Propagation 社区聚类，同数组内的表属同一业务模块
+- `orphans`：无任何关联的孤立表
+- `cycles`：循环依赖
+- `critical_path`：最长依赖链
 
 ---
 
@@ -923,3 +1122,169 @@ def incremental_update_vectors(vector_db, old_chunks: dict, new_chunks: dict):
 
     return len(removed), len(changed)
 ```
+
+---
+
+## 十一、RAG 侧优化建议
+
+> 以下优化方案利用 graph-builder 已导出的数据，在 RAG 查询侧实现。
+> graph-builder 只负责提供数据，下面这些逻辑由 RAG 系统自行实现。
+
+### 1. 预构建邻接索引（避免查询时 O(R) 全量扫描）
+
+`schema_graph.json` 的 `relations` 数组有数万条。每次查询遍历全量关系非常慢，建议启动时一次性预构建双向邻接索引：
+
+```python
+from collections import defaultdict
+
+ADJ_OUT: dict[str, list] = defaultdict(list)   # table → [(neighbor, rel_dict)]
+ADJ_IN:  dict[str, list] = defaultdict(list)   # table → [(neighbor, rel_dict)]
+for rel in GRAPH["relations"]:
+    ADJ_OUT[rel["from_table"]].append((rel["to_table"], rel))
+    ADJ_IN[rel["to_table"]].append((rel["from_table"], rel))
+```
+
+之后图扩展和上下文组装都用 `ADJ_OUT.get(table)` / `ADJ_IN.get(table)` 查邻居，O(邻居数) 而非 O(全部关系)。
+
+### 2. 利用 `_cn_segments` 和 `_normalized` 提高种子表定位准确率
+
+`column_index.json` 包含两个增强子索引：
+
+```python
+with open(DATA / "column_index.json", encoding="utf-8") as f:
+    _col_raw = json.load(f)
+    if "column_to_tables" in _col_raw:
+        _col_raw = _col_raw["column_to_tables"]
+COL_IDX = {k: v for k, v in _col_raw.items() if not k.startswith("_")}
+CN_SEGMENTS = _col_raw.get("_cn_segments", {})   # 中文实体词 → 表名
+NORMALIZED  = _col_raw.get("_normalized", {})     # 归一化列名 → 表名
+```
+
+种子表定位时可增加两个策略：
+
+```python
+# 策略 A：中文实体词精确定位
+# 构建时已对所有列名做中文切词，如"英雄主动技能ID"→切出"技能"
+if entity in CN_SEGMENTS:
+    seeds.update(CN_SEGMENTS[entity])
+
+# 策略 B：归一化列名匹配（去掉 _id/_key 等 FK 后缀）
+# 如 entity="hero"，NORMALIZED["hero"] 包含所有有 hero_id 列的表
+prefix = entity.lower()
+for suffix in ('_id', '_key', '_code', '_no'):
+    prefix = prefix.removesuffix(suffix)
+if prefix in NORMALIZED:
+    seeds.update(NORMALIZED[prefix])
+```
+
+### 3. Centrality 加权排序（枢纽表优先）
+
+`analysis.json` 的 centrality 字段包含每张表的 PageRank 中心性分数（0-100）。在 `rank_and_prune()` 排序中给枢纽表加分，避免边缘无关表挤占 context 窗口：
+
+```python
+CENTRALITY = {}
+_analysis_path = DATA / "analysis.json"
+if _analysis_path.exists():
+    with open(_analysis_path, encoding="utf-8") as f:
+        _analysis = json.load(f)
+    CENTRALITY = _analysis.get("centrality", {})
+    MODULES = _analysis.get("modules", [])
+
+# rank_and_prune() 中新增：
+score += CENTRALITY.get(name, 0) / 100.0 * 1.5   # 枢纽表最多 +1.5 分
+if GRAPH["tables"].get(name, {}).get("row_count", 0) <= 200:
+    score += 0.5  # 小表 sample_values 更完整，LLM 回答更准
+```
+
+### 4. 同模块表优先召回
+
+`analysis.json` 的 modules 字段包含 Label Propagation 社区聚类结果。种子表的同模块邻居应优先召回：
+
+```python
+# 预构建 table → module_id 映射
+TABLE_MODULE = {}
+for idx, mod in enumerate(MODULES):
+    for t in mod:
+        TABLE_MODULE[t] = idx
+
+# rank_and_prune() 中，如果候选表和任一种子表同模块，加分
+seed_modules = {TABLE_MODULE.get(s) for s in seed_tables} - {None}
+if TABLE_MODULE.get(name) in seed_modules:
+    score += 1.0  # 同业务模块加分
+```
+
+### 5. 向量化优先用 `searchable_text`
+
+`table_profiles.jsonl` 每条记录的 `searchable_text` 字段专为语义匹配设计，包含：
+- 表名、域名、中文同义词（"英雄"、"角色"、"人物"）
+- 所有列名
+- 文本类枚举值（"普通"、"精英"、"传说"）
+- 关联表名
+
+相比 `llm_chunks.jsonl` 的结构化 Markdown 摘要，`searchable_text` 没有格式噪声（`##`、`→`、`@0.95` 等标记），向量空间中语义距离更准。建议向量化入库时优先使用：
+
+```python
+with open(DATA / "table_profiles.jsonl", encoding="utf-8") as f:
+    for line in f:
+        obj = json.loads(line)
+        ids.append(obj["table_name"])
+        texts.append(obj["searchable_text"])
+collection.upsert(ids=ids, documents=texts)
+```
+
+### 6. Prefix Caching（降低 LLM 延迟和成本）
+
+`schema_summary.txt`（~42KB, ~15K tokens）和回答规则作为 system prompt 的固定前缀，每次查询都不变。如果使用支持 prefix caching 的 LLM（如 GPT-4o、Claude），可以将 prompt 分层：
+
+```python
+def build_system_prompt(context: str) -> str:
+    # 固定前缀（可被缓存，首次之后不再计费/延迟）
+    prefix = f"{SCHEMA_SUMMARY}\n\n{ANSWER_RULES}\n\n"
+    # 动态后缀（每次查询不同）
+    suffix = f"## 当前查询相关的表结构\n\n{context}"
+    return prefix + suffix
+```
+
+效果：首次之后的请求延迟和费用降低 30-50%。
+
+### 7. entity→seeds 预缓存
+
+`find_seed_tables()` 每次查询都遍历全部表名做前缀匹配。如果实体词集合有限（游戏领域通常 30-50 个高频实体），可在启动时预构建缓存：
+
+```python
+ENTITY_SEED_CACHE: dict[str, list[str]] = {}
+for entity, prefix in ENTITY_MAP.items():
+    tables = []
+    for name in GRAPH["tables"]:
+        if name == prefix or name.startswith(prefix + "_"):
+            tables.append(name)
+    for name, t in GRAPH["tables"].items():
+        if t.get("domain_label") == prefix and name not in tables:
+            tables.append(name)
+    ENTITY_SEED_CACHE[entity] = tables
+
+# 查询时 O(1)：
+seeds = ENTITY_SEED_CACHE.get(entity, [])
+```
+
+### 8. 关于"规则引擎替代 LLM 意图提取"的建议
+
+**不推荐**用纯规则引擎替代第一次 LLM 调用（意图提取 + 实体识别），原因：
+
+- LLM 能做隐式推理："升星要什么"→推断出 `hero_hero_star` + 道具表。规则引擎只能匹配到"升星"两字
+- LLM 理解口语化表达："氪金"→充值/商店、"变强"→hero+skill+equip 多域关联
+- Intent 判断需要上下文：同样的"品质"在不同语境下是 schema/value/impact
+- LLM 看着 `SCHEMA_SUMMARY` 的完整表名列表"点菜"，精确度远超关键词匹配
+- 成本极低：~780 tokens / 1-2s，省掉可能导致 20-30% 查询种子表错误
+
+如需优化这一步延迟，建议换用更快的小模型（如 gpt-4o-mini）或缩减 prompt 体积，而非去掉 LLM。
+
+### 9. 关于"Intent-aware 图遍历方向"的建议
+
+**不推荐**根据 intent 限制 BFS 遍历方向（如 impact→只走入向），原因：
+
+- FK 方向（from→to）代表"引用"，≠ 影响传播方向。如"改英雄品质影响什么"需要 hero→(入向)hero_star→(出向)item，只走入向第二跳就丢失 item
+- 启发式关系置信度分布模糊，0.6-0.7 区间有大量有效关系，提高 min_conf 阈值会误杀
+- BFS 深度仅 2 跳，砍掉一个方向等于只剩 1 跳有效覆盖
+
+更好的做法：保持双向 BFS 不变，噪音交给排序阶段处理（距离衰减 + centrality 加权 + 实体命中 + 同模块加分）。
