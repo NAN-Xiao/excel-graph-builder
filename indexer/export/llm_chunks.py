@@ -22,6 +22,9 @@ from typing import List, Optional
 from collections import defaultdict
 
 from indexer.models import SchemaGraph
+from indexer.export.atomic_write import (
+    atomic_write_json, atomic_write_jsonl, atomic_write_text,
+)
 
 
 def export_schema_summary(graph: SchemaGraph,
@@ -82,10 +85,7 @@ def export_schema_summary(graph: SchemaGraph,
     text = "\n".join(lines) + "\n"
 
     if output_path:
-        p = Path(output_path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with open(p, 'w', encoding='utf-8') as f:
-            f.write(text)
+        atomic_write_text(output_path, text)
 
     return text
 
@@ -248,20 +248,20 @@ def export_llm_chunks(graph: SchemaGraph,
     # 写文件
     if output_path:
         p = Path(output_path)
-        p.parent.mkdir(parents=True, exist_ok=True)
         if p.suffix == '.jsonl':
-            with open(p, 'w', encoding='utf-8') as f:
-                for i, (name, chunk) in enumerate(
-                        zip(sorted(graph.tables.keys()), chunks)):
-                    obj = {"id": name, "text": chunk}
-                    f.write(json.dumps(obj, ensure_ascii=False, default=str) + "\n")
+            records = [
+                {"id": name, "text": chunk}
+                for name, chunk in zip(sorted(graph.tables.keys()), chunks)
+            ]
+            atomic_write_jsonl(output_path, records)
         else:
-            with open(p, 'w', encoding='utf-8') as f:
-                f.write(f"# Schema Graph LLM Export\n")
-                f.write(f"# {len(chunks)} tables, "
-                        f"{len(graph.relations)} relations\n\n")
-                for chunk in chunks:
-                    f.write(chunk + "\n")
+            text = (
+                f"# Schema Graph LLM Export\n"
+                f"# {len(chunks)} tables, "
+                f"{len(graph.relations)} relations\n\n"
+                + "\n".join(chunks) + "\n"
+            )
+            atomic_write_text(output_path, text)
 
     return chunks
 
@@ -335,9 +335,6 @@ def export_column_index(graph: SchemaGraph,
         result["_cn_segments"] = cn_segments
 
     if output_path:
-        p = Path(output_path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with open(p, 'w', encoding='utf-8') as f:
-            json.dump(result, f, ensure_ascii=False, indent=1)
+        atomic_write_json(output_path, result)
 
     return result

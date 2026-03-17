@@ -73,6 +73,7 @@ pyinstaller ^
     --hidden-import=indexer.export.llm_chunks ^
     --hidden-import=indexer.export.rag_assets ^
     --hidden-import=indexer.export.cell_locator ^
+    --hidden-import=indexer.export.atomic_write ^
     --hidden-import=indexer.analysis ^
     --hidden-import=indexer.analysis.analyzer ^
     --hidden-import=indexer.report ^
@@ -99,8 +100,9 @@ echo [3/3] 整理发布目录...
 move "%DIST_DIR%\pack\indexer\indexer.exe" "%DIST_DIR%\indexer.exe" >nul
 move "%DIST_DIR%\pack\indexer\excel_graph_builder" "%DIST_DIR%\excel_graph_builder" >nul
 
-:: 复制启动脚本
-copy /y "%SCRIPT_DIR%indexer_run.bat" "%DIST_DIR%\indexer_run.bat" >nul
+:: 复制安装/卸载脚本
+copy /y "%SCRIPT_DIR%install.bat" "%DIST_DIR%\install.bat" >nul
+copy /y "%SCRIPT_DIR%uninstall.bat" "%DIST_DIR%\uninstall.bat" >nul
 
 :: 清理中间目录
 rmdir /s /q "%DIST_DIR%\pack" 2>nul
@@ -114,18 +116,23 @@ echo.
 echo   发布目录: %DIST_DIR%\
 echo.
 echo   dist\
-echo     indexer.exe                可执行文件
-echo     indexer_run.bat            双击启动（增量构建）
+echo     indexer.exe                可执行文件（双击可手动执行单次构建）
+echo     install.bat               安装：首次构建 + 注册每天定时任务
+echo     uninstall.bat             卸载：删除定时任务
 echo     excel_graph_builder\       运行时依赖
 echo.
 echo   部署方法:
-echo     将 dist\ 目录下所有内容拷贝到 Excel 数据目录下即可。
+echo     1. 将 dist\ 整个目录拷贝到 Excel 数据目录下
+echo     2. 以管理员身份运行 install.bat（自动首次构建 + 注册定时任务）
+echo     3. 完成！之后每天自动构建，无需人工干预
+echo.
 echo     拷贝后结构:
 echo.
 echo     excel_data\
-echo       configs\                  Excel 表文件
-echo       indexer.exe               直接双击或命令行运行
-echo       indexer_run.bat           双击启动
+echo       excel\                    Excel 表文件
+echo       indexer.exe               可执行文件
+echo       install.bat               安装定时任务
+echo       uninstall.bat             卸载定时任务
 echo       excel_graph_builder\      运行时依赖
 echo       graph\                    构建产出（自动生成）
 echo.

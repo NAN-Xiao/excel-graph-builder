@@ -48,6 +48,7 @@ python -m indexer ^
     --storage-dir "%GRAPH_DIR%" ^
     --html-dir "%GRAPH_DIR%" ^
     --daemon ^
+    --run-now ^
     --schedule daily:02:00
 
 pause

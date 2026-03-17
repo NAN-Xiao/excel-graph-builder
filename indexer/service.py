@@ -260,14 +260,27 @@ class IndexService:
     def run(self, daemon: bool = False):
         """运行服务"""
         print("=" * 60)
-        print("Index Service 已启动")
-        print(f"数据目录: {self.data_root}")
-        print(f"存储目录: {self.storage.data_dir}")
-        print(f"HTML 报告: {self.builder.html_generator.output_dir}")
+        print("  Excel Graph Builder")
+        print("=" * 60)
+        print(f"  数据目录: {self.data_root}")
+        print(f"  输出目录: {self.storage.data_dir}")
+        if daemon:
+            jobs = schedule_mod.get_jobs() if 'schedule_mod' not in dir() else []
+            try:
+                import schedule as schedule_mod
+                jobs = schedule_mod.get_jobs()
+            except Exception:
+                jobs = []
+            if jobs:
+                print(f"  调度任务: {len(jobs)} 个")
+                for j in jobs:
+                    print(f"    - {j}")
+            if self.watcher:
+                print(f"  文件监控: 已启用")
         print("=" * 60)
 
         if daemon:
-            print("后台服务模式，按 Ctrl+C 停止")
+            print("\n守护模式运行中，按 Ctrl+C 停止\n")
             try:
                 while True:
                     time.sleep(1)
@@ -329,20 +342,9 @@ def main():
         _handle_query(service.current_graph, args.query)
         return
 
-    if args.run_now:
-        service.build_full(incremental=True)
-        return
-
     if args.daemon:
-        # 解析调度策略
-        if args.schedule.startswith("daily:"):
-            time_str = args.schedule.split(":", 1)[1]
-            hour, minute = map(int, time_str.split(":"))
-            service.start_scheduler("daily", hour=hour, minute=minute)
-        elif args.schedule.startswith("interval:"):
-            minutes = int(args.schedule.split(":", 1)[1])
-            service.start_scheduler("interval", minutes=minutes)
-
+        # 守护模式：定时调度 + 文件监控 + 可选首次立即构建
+        _parse_and_start_schedule(service, args.schedule)
         service.start_watcher()
 
         def signal_handler(sig, frame):
@@ -352,9 +354,36 @@ def main():
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
+        # --run-now 与 --daemon 可组合：先立即构建一次，再进入守护循环
+        if args.run_now:
+            service.build_full(incremental=True)
+
         service.run(daemon=True)
+
+    elif args.run_now:
+        service.build_full(incremental=True)
+
     else:
         service.build_full(incremental=True)
+
+
+def _parse_and_start_schedule(service: IndexService, schedule_str: str):
+    """解析调度策略字符串并启动调度器
+
+    支持格式:
+      daily:HH:MM    — 每日定时（如 daily:02:00）
+      interval:N     — 每 N 分钟执行一次
+    """
+    if schedule_str.startswith("daily:"):
+        time_str = schedule_str.split(":", 1)[1]
+        hour, minute = map(int, time_str.split(":"))
+        service.start_scheduler("daily", hour=hour, minute=minute)
+    elif schedule_str.startswith("interval:"):
+        minutes = int(schedule_str.split(":", 1)[1])
+        service.start_scheduler("interval", minutes=minutes)
+    else:
+        service.logger.warning(f"未知调度策略: {schedule_str}，将使用默认 daily:02:00")
+        service.start_scheduler("daily", hour=2, minute=0)
 
 
 def _handle_query(graph: SchemaGraph, keyword: str):

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Optional, Dict, List
 
 from indexer.models import SchemaGraph
+from indexer.export.atomic_write import atomic_write_json
 
 
 def _col_idx_to_excel_letter(idx: int) -> str:
@@ -123,10 +124,7 @@ def export_cell_locator(graph: SchemaGraph,
     }
 
     if output_path:
-        p = Path(output_path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with open(p, 'w', encoding='utf-8') as f:
-            json.dump(result, f, ensure_ascii=False, indent=1, default=str)
+        atomic_write_json(output_path, result)
 
     return result
 

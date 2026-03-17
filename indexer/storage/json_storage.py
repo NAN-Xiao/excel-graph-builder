@@ -6,29 +6,13 @@
 
 import json
 import os
-import platform
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict
 
 from indexer.models import SchemaGraph, TableSchema, RelationEdge, ChangeRecord
 from indexer import SimpleLogger
-
-# 跨平台文件锁
-
-_LOCK_MODE = None  # 'fcntl' | 'msvcrt' | None
-try:
-    import fcntl  # Linux/Mac
-    _LOCK_MODE = 'fcntl'
-except ImportError:
-    pass
-
-if _LOCK_MODE is None and platform.system() == 'Windows':
-    try:
-        import msvcrt  # Windows
-        _LOCK_MODE = 'msvcrt'
-    except ImportError:
-        pass
+from indexer.export.atomic_write import atomic_write_json
 
 
 class JsonGraphStorage:
@@ -149,28 +133,10 @@ class JsonGraphStorage:
             traceback.print_exc()
             return None
 
-    def _atomic_write(self, filepath: Path, data: dict):
-        """原子写入（跨平台文件锁）"""
-        temp_file = filepath.with_suffix('.tmp')
-
-        with open(temp_file, 'w', encoding='utf-8') as f:
-            # 加锁
-            if _LOCK_MODE == 'fcntl':
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-            elif _LOCK_MODE == 'msvcrt':
-                msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
-
-            json.dump(data, f, ensure_ascii=False, indent=2, default=str)
-
-            # 解锁
-            if _LOCK_MODE == 'fcntl':
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-            elif _LOCK_MODE == 'msvcrt':
-                f.seek(0)
-                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
-
-        # 原子重命名（Windows 和 Unix 都支持）
-        temp_file.replace(filepath)
+    @staticmethod
+    def _atomic_write(filepath: Path, data: dict):
+        """原子写入（委托给统一的 atomic_write 模块，含自动重试）"""
+        atomic_write_json(filepath, data, indent=2)
 
     # 持久化时每列最多保留的 sample_values 数量（减小 JSON 文件体积）
     MAX_PERSISTED_SAMPLES = 30

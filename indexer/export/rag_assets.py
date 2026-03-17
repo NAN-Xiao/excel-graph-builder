@@ -30,6 +30,7 @@ from typing import Optional, Dict, List, Tuple, Set
 from collections import defaultdict, deque
 
 from indexer.models import SchemaGraph, RelationEdge
+from indexer.export.atomic_write import atomic_write_json, atomic_write_jsonl
 
 # domain → 中文名映射（用于 enriched searchable_text）
 _DOMAIN_CN_NAMES: Dict[str, List[str]] = {
@@ -443,11 +444,7 @@ def export_table_profiles(graph: SchemaGraph,
         profiles.append(profile)
 
     if output_path:
-        p = Path(output_path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with open(p, 'w', encoding='utf-8') as f:
-            for profile in profiles:
-                f.write(json.dumps(profile, ensure_ascii=False, default=str) + "\n")
+        atomic_write_jsonl(output_path, profiles)
 
     return profiles
 
@@ -773,8 +770,5 @@ def _compute_shared_values(graph: SchemaGraph, rel: RelationEdge,
 
 
 def _write_json(output_path: str, data: dict):
-    p = Path(output_path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    with open(p, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=1, default=str)
+    atomic_write_json(output_path, data)
 
