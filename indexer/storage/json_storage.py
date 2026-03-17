@@ -34,7 +34,7 @@ if _LOCK_MODE is None and platform.system() == 'Windows':
 class JsonGraphStorage:
     """JSON 文件存储图谱数据"""
 
-    def __init__(self, data_dir: str = "./data/indexer"):
+    def __init__(self, data_dir: str = "./graph"):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.logger = SimpleLogger()

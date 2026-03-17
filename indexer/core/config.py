@@ -13,8 +13,8 @@ class BuildConfig:
     """构建配置"""
     # 路径配置
     data_root: str = "./data"
-    storage_dir: str = "./data/indexer"
-    html_dir: str = "./html"
+    storage_dir: str = "./graph"
+    html_dir: str = "./graph"
 
     # 性能配置
     max_workers: int = 4
@@ -39,7 +39,7 @@ class BuildConfig:
 
     # 缓存配置
     enable_perf_opt: bool = True
-    fingerprint_cache_file: str = "./data/fingerprints.json"
+    fingerprint_cache_file: str = "./graph/fingerprints.json"
     feedback_file: str = "relation_feedback.json"
     auto_save_interval: int = 60
 

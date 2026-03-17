@@ -45,8 +45,7 @@ excel-graph-builder/
 │   └── storage/             # 持久化
 │       └── json_storage.py  # JSON 原子读写 + 文件锁
 │
-├── html/                    # 输出: HTML 报告 + JS 库
-└── data/                    # 输出: JSON 图谱数据
+└── graph/                   # 输出: 图谱数据 + HTML 报告（默认输出到 <data-root>/graph/）
 ```
 
 ## 快速开始
@@ -59,11 +58,13 @@ python -m venv .venv
 # 2. 安装依赖
 pip install -r requirements.txt
 
-# 3. 一次性构建
+# 3. 一次性构建（产出到 path/to/excel/graph/）
 python -m indexer --data-root "path/to/excel" --run-now
 
 # 4. 守护进程模式（定时构建 + 文件监控）
 python -m indexer --data-root "path/to/excel" --daemon --schedule daily:02:00
+
+# 产出目录默认为 <data-root>/graph/，可通过 --storage-dir 自定义
 ```
 
 ## API 使用
@@ -72,8 +73,8 @@ python -m indexer --data-root "path/to/excel" --daemon --schedule daily:02:00
 from indexer.core.builder import GraphBuilder
 from indexer.core.config import BuildConfig
 
-# 创建构建器
-config = BuildConfig(data_root="./data")
+# 创建构建器（产出到 <data_root>/graph/）
+config = BuildConfig(data_root="path/to/excel")
 builder = GraphBuilder(config)
 
 # 构建图谱
@@ -89,12 +90,12 @@ builder.close()
 from indexer.storage import JsonGraphStorage
 
 # 加载已有图谱
-storage = JsonGraphStorage("./data/indexer")
+storage = JsonGraphStorage("path/to/excel/graph")
 graph = storage.load()
 
 # 增强（只执行关系发现）
 from indexer.core.builder import GraphBuilder
-builder = GraphBuilder(BuildConfig(data_root="./data"))
+builder = GraphBuilder(BuildConfig(data_root="path/to/excel"))
 enhanced, result = builder.build_full_graph(existing_graph=graph, incremental=True)
 
 # 保存
@@ -115,7 +116,7 @@ storage.save(enhanced)
 from indexer.core.config import BuildConfig
 
 config = BuildConfig(
-    data_root="./data",
+    data_root="path/to/excel",
     containment_threshold=0.85,    # 包含度阈值
     abbrev_confidence_threshold=0.8,  # 缩写置信度
     enable_perf_opt=True,           # 启用性能优化

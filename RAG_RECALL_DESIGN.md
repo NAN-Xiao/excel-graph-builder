@@ -15,10 +15,10 @@ pip install -r requirements.txt   # 只有 openpyxl, xlrd
 python -m indexer --data-root "I:\slgconfiguration\excel" --run-now
 ```
 
-构建完成后 `data/indexer/` 自动产出：
+构建完成后 `<excel_dir>/graph/` 自动产出：
 
 ```
-data/indexer/
+<excel_dir>/graph/
 ├── schema_graph.json     ← 主图谱：206 张表 + 3461 条关系
 ├── column_index.json     ← 列名→表名倒排索引
 ├── meta.json             ← 构建元信息
@@ -35,7 +35,7 @@ data/indexer/
 import json
 from pathlib import Path
 
-DATA_DIR = Path("data/indexer")  # 相对于项目根目录
+DATA_DIR = Path("<excel_dir>/graph")  # --data-root 指定目录的 graph/ 子目录
 
 # 主图谱
 with open(DATA_DIR / "schema_graph.json", encoding="utf-8") as f:
@@ -54,7 +54,7 @@ SCHEMA_SUMMARY = (DATA_DIR / "schema_summary.txt").read_text(encoding="utf-8")
 # SCHEMA_SUMMARY → str, ~500 tokens 的业务域分组表名
 ```
 
-> 整个 RAG 接入**只需要 `data/indexer/` 下的文件**，不需要 import indexer 包。
+> 整个 RAG 接入**只需要 `<excel_dir>/graph/` 下的文件**，不需要 import indexer 包。
 
 ---
 
@@ -63,7 +63,7 @@ SCHEMA_SUMMARY = (DATA_DIR / "schema_summary.txt").read_text(encoding="utf-8")
 系统从 113 个 Excel 文件中自动提取，构建时自动产出以下文件：
 
 ```
-data/indexer/
+<excel_dir>/graph/
 ├── schema_graph.json     ← 主图谱：206 张表 + 3461 条关系
 ├── column_index.json     ← 列名→表名倒排索引
 ├── meta.json             ← 构建元信息
@@ -691,7 +691,7 @@ class ConversationRAG:
 
 ### 7.5 反馈闭环
 
-系统支持人工反馈修正关系（`data/indexer/feedback.json`）：
+系统支持人工反馈修正关系（`<excel_dir>/graph/feedback.json`）：
 
 ```jsonc
 [
@@ -735,7 +735,7 @@ from pathlib import Path
 # ═══════════════════════════════════════════
 # 1. 加载数据（启动时执行一次）
 # ═══════════════════════════════════════════
-DATA_DIR = Path("data/indexer")
+DATA_DIR = Path("<excel_dir>/graph")  # --data-root 指定目录的 graph/ 子目录
 with open(DATA_DIR / "schema_graph.json", encoding="utf-8") as f:
     GRAPH = json.load(f)
 with open(DATA_DIR / "column_index.json", encoding="utf-8") as f:

@@ -28,7 +28,7 @@ class IndexService:
     # 文件变化后延迟 3 秒执行增量构建（防抖）
     INCREMENTAL_DELAY = 3.0
 
-    def __init__(self, data_root: str, storage_dir: str = "./data/indexer", html_dir: str = "./html", offline_html: bool = True):
+    def __init__(self, data_root: str, storage_dir: str = "./graph", html_dir: str = "./graph", offline_html: bool = True):
         self.data_root = Path(data_root)
         self.storage = JsonGraphStorage(storage_dir)
         self.scheduler = BuildScheduler()

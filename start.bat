@@ -9,9 +9,8 @@ echo.
 
 :: 设置环境变量
 set "SCRIPT_DIR=%~dp0"
-set "PROJECT_ROOT=%SCRIPT_DIR%.."
-set "DATA_ROOT=%PROJECT_ROOT%"
-set "GRAPH_DIR=%PROJECT_ROOT%\graph"
+set "DATA_ROOT=D:\work\A_elex\策划表\excel"
+set "GRAPH_DIR=%DATA_ROOT%\graph"
 
 :: 创建目录
 if not exist "%GRAPH_DIR%" mkdir "%GRAPH_DIR%"
