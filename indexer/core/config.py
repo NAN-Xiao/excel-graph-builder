@@ -5,7 +5,33 @@
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from pathlib import Path
+from typing import Optional, Dict
+
+
+def load_config_file(config_path: str) -> Dict[str, str]:
+    """加载简单 YAML 配置文件（仅支持 flat key: value 格式）
+
+    不依赖 PyYAML，适用于 configs/settings.yml 这类简单配置。
+    """
+    result: Dict[str, str] = {}
+    path = Path(config_path)
+    if not path.exists():
+        raise FileNotFoundError(f"配置文件不存在: {config_path}")
+
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if ":" not in line:
+                continue
+            key, _, value = line.partition(":")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and value:
+                result[key] = value
+    return result
 
 
 @dataclass

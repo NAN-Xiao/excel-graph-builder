@@ -306,9 +306,11 @@ class IndexService:
 
 def main():
     parser = argparse.ArgumentParser(description="索引构建服务")
-    parser.add_argument("--data-root", default=".", help="Excel 数据根目录（默认为当前目录）")
-    parser.add_argument("--storage-dir", default="./graph", help="构建产出目录")
-    parser.add_argument("--html-dir", default="./graph", help="HTML 报告输出目录")
+    parser.add_argument("--config", default=None,
+                        help="配置文件路径（如 configs/settings.yml）")
+    parser.add_argument("--data-root", default=None, help="Excel 数据根目录")
+    parser.add_argument("--storage-dir", default=None, help="构建产出目录")
+    parser.add_argument("--html-dir", default=None, help="HTML 报告输出目录")
     parser.add_argument("--offline-html", action="store_true",
                         default=True, help="生成离线 HTML 报告（内联 vis.js）")
     parser.add_argument("--daemon", action="store_true", help="后台服务模式")
@@ -321,8 +323,34 @@ def main():
 
     args = parser.parse_args()
 
-    service = IndexService(args.data_root, args.storage_dir,
-                           args.html_dir, args.offline_html)
+    # 从配置文件加载默认值，CLI 参数优先
+    data_root = args.data_root or "."
+    storage_dir = args.storage_dir or "./graph"
+    html_dir = args.html_dir or "./graph"
+
+    if args.config:
+        from indexer.core.config import load_config_file
+        try:
+            cfg = load_config_file(args.config)
+            config_dir = Path(args.config).resolve().parent
+
+            def _resolve_cfg_path(path_val: str) -> str:
+                p = Path(path_val)
+                if p.is_absolute():
+                    return str(p)
+                return str((config_dir / p).resolve())
+
+            if not args.data_root and "data_root" in cfg:
+                data_root = _resolve_cfg_path(cfg["data_root"])
+            if not args.storage_dir and "graph_dir" in cfg:
+                storage_dir = _resolve_cfg_path(cfg["graph_dir"])
+            if not args.html_dir and "graph_dir" in cfg:
+                html_dir = _resolve_cfg_path(cfg["graph_dir"])
+        except FileNotFoundError as e:
+            print(f"[ERR] {e}")
+            sys.exit(1)
+
+    service = IndexService(data_root, storage_dir, html_dir, args.offline_html)
 
     # L3: LLM 紧凑导出
     if args.export_llm:

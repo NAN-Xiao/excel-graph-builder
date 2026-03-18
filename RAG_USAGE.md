@@ -4,7 +4,14 @@
 
 ## 一、数据资产总览
 
-所有导出文件在 `<excel_dir>/graph/` 目录下（即 `--data-root` 指定目录的 `graph/` 子目录）。当前版本：**1559 张表，32334 条关系**。
+所有导出文件在根目录的 `graph/` 下（与 `dist/` 和 Excel 文件夹同级）。当前版本：**1559 张表，32334 条关系**。
+
+```
+excel_data\          ← 根目录
+  dist\              ← 部署包（indexer.exe + configs）
+  excel\             ← Excel 数据
+  graph\             ← 数据资产（下方所有文件在这里）
+```
 
 | 文件 | 大小 | 用途 | 加载优先级 |
 |:--|:--|:--|:--|
@@ -34,7 +41,7 @@ import json
 from pathlib import Path
 from collections import defaultdict
 
-DATA = Path("<excel_dir>/graph")  # --data-root 指定目录的 graph/ 子目录
+DATA = Path("<excel_data>/graph")  # 根目录下的 graph/ 目录
 
 # 1. 全量表名摘要（~42KB，常驻 system prompt）
 SCHEMA_SUMMARY = (DATA / "schema_summary.txt").read_text(encoding="utf-8")
@@ -1014,16 +1021,16 @@ print(llm_with_tools("item表和reward表之间怎么关联？"))
 ### 构建模式
 
 ```bash
-# 首次全量构建（产出到 <excel_dir>/graph/）
-python -m indexer --data-root "你的Excel目录" --run-now
+# 在 dist/ 目录下执行（配置从 configs/settings.yml 读取）
 
-# 增量构建（推荐：Excel 修改后执行，秒级完成）
-python -m indexer --data-root "你的Excel目录" --run-now
+# 首次 / 增量构建（推荐：Excel 修改后执行，秒级完成）
+indexer.exe --config configs\settings.yml --run-now
 
 # 可选：后台守护模式（监听文件变化 + 定时重建）
-python -m indexer --data-root "你的Excel目录" --daemon --schedule daily:02:00
+indexer.exe --config configs\settings.yml --daemon --run-now --schedule daily:02:00
 
-# 产出目录默认为 <data-root>/graph/，可通过 --storage-dir 自定义
+# 通过 Windows 计划任务自动执行（推荐：由 install.bat 配置）
+# 详见 README.md
 ```
 
 > `--run-now` 默认使用增量模式：加载已有图谱，只处理变更文件。
@@ -1096,7 +1103,7 @@ python -m indexer --data-root "你的Excel目录" --daemon --schedule daily:02:0
 
 ### 外部 RAG 系统更新
 
-重建后 `<excel_dir>/graph/` 下的所有文件会自动更新。外部 RAG 系统需要：
+重建后 `graph/` 下的所有文件会自动更新（原子写入，不会出现半写文件）。外部 RAG 系统需要：
 
 1. **重新加载** `schema_graph.json`、`schema_summary.txt` 等文件
 2. **增量更新向量库**：对比新旧 `llm_chunks.jsonl`，只 upsert 变化的 chunk
