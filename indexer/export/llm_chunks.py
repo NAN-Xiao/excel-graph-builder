@@ -18,13 +18,57 @@ LLM 紧凑摘要导出
 
 import json
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Tuple
 from collections import defaultdict
 
 from indexer.models import SchemaGraph
 from indexer.export.atomic_write import (
     atomic_write_json, atomic_write_jsonl, atomic_write_text,
 )
+
+# 超过此列数的表触发列组拆分，避免 LLM 上下文中看不到后半部分列
+_WIDE_TABLE_COL_THRESHOLD = 30
+# 每个列组最多包含的列数
+_GROUP_MAX_COLS = 20
+
+
+def _group_columns_for_wide_table(
+    table, fk_map: Dict[str, Tuple[str, str]]
+) -> List[Tuple[str, List[str]]]:
+    """
+    将宽表的列按语义分组，每组返回 (组标签, 列名列表)。
+
+    分组策略：
+    1. 外键列单独成一组（类型统一，方便 RAG 识别关联关系）
+    2. 剩余非外键列按位置顺序分组，每组 _GROUP_MAX_COLS 列
+       - 第一组包含主键，作为"基础信息"
+    """
+    pk = table.primary_key
+    all_col_names = [c['name'] for c in table.columns]
+
+    fk_cols = [cn for cn in all_col_names if cn in fk_map]
+    non_fk_cols = [cn for cn in all_col_names if cn not in fk_map]
+
+    groups: List[Tuple[str, List[str]]] = []
+
+    # 分割非外键列为若干组
+    remaining = list(non_fk_cols)
+    group_idx = 1
+    while remaining:
+        batch = remaining[:_GROUP_MAX_COLS]
+        remaining = remaining[_GROUP_MAX_COLS:]
+        if group_idx == 1 and pk:
+            label = "基础信息"
+        else:
+            label = f"属性组{group_idx}"
+        groups.append((label, batch))
+        group_idx += 1
+
+    # 外键列独立成一组
+    if fk_cols:
+        groups.append(("外键引用", fk_cols))
+
+    return groups
 
 
 def export_schema_summary(graph: SchemaGraph,
@@ -90,6 +134,95 @@ def export_schema_summary(graph: SchemaGraph,
     return text
 
 
+def _build_col_part(cn: str, dt: str, sv: list, pk: str,
+                    fk_map: Dict, enum_columns: Dict,
+                    stats: Dict = None, pack_info: Dict = None) -> str:
+    """将单列信息格式化为摘要字符串。
+
+    pack 列格式：skill_ids(pack|int)→skill_base.id  或  skill_ids(pack|int)[101~5000]
+    数值范围优先使用 stats.min/max（精确，来自全量数据）。
+    """
+    # Pack 数组列：优先标注 pack 类型，再标注 FK 目标
+    if pack_info and pack_info.get('is_pack'):
+        sep = pack_info['pack_separator']
+        elem_dt = pack_info['pack_element_dtype']
+        pack_tag = f"pack{sep}{elem_dt}"
+        if cn in fk_map:
+            tt, tc = fk_map[cn]
+            return f"{cn}({pack_tag})→{tt}.{tc}"
+        elems = pack_info.get('pack_element_samples', [])
+        if elems and elem_dt == 'int':
+            return f"{cn}({pack_tag})[{elems[0]}~{elems[-1]}]"
+        return f"{cn}({pack_tag})"
+
+    if cn in fk_map:
+        tt, tc = fk_map[cn]
+        return f"{cn}({dt})→{tt}.{tc}"
+
+    if cn == pk:
+        if dt == 'int' and stats:
+            return f"{cn}({dt})[{stats['min']}~{stats['max']}]"
+        if dt == 'int' and sv and len(sv) >= 2:
+            return f"{cn}({dt})[{sv[0]}~{sv[-1]}]"
+        return f"{cn}({dt})"
+
+    if cn in (enum_columns or {}):
+        evals = enum_columns[cn]
+        text_vals = [str(v) for v in evals[:4]
+                     if not str(v).replace('.', '').replace('-', '').isdigit()]
+        if text_vals:
+            return f"{cn}({dt})[{','.join(text_vals)}]"
+        if len(evals) <= 10:
+            return f"{cn}({dt})[{','.join(str(v) for v in evals[:6])}]"
+        return f"{cn}({dt})"
+
+    # 普通数值列：展示值范围，帮助 LLM 判断量纲和类型
+    if dt in ('int', 'float') and stats:
+        lo, hi = stats['min'], stats['max']
+        if lo != hi:
+            return f"{cn}({dt})[{lo}~{hi}]"
+
+    return f"{cn}({dt})"
+
+
+def _build_rel_str(outgoing, incoming, name: str,
+                   max_relations_per_dir: int) -> str:
+    """构建关联摘要字符串。"""
+    _HIGH_CONF = 0.8
+    out_rels = sorted(outgoing.get(name, []), key=lambda x: -x[3])
+    in_rels = sorted(incoming.get(name, []), key=lambda x: -x[3])
+
+    rel_parts_certain = []
+    rel_parts_likely = []
+
+    for fc, tt, tc, conf, _ in out_rels[:max_relations_per_dir]:
+        entry = f"→ {tt}({fc}→{tc} @{conf})"
+        if conf >= _HIGH_CONF:
+            rel_parts_certain.append(entry)
+        else:
+            rel_parts_likely.append(entry)
+    out_extra = len(out_rels) - max_relations_per_dir
+    if out_extra > 0:
+        rel_parts_likely.append(f"...+{out_extra}条出向")
+
+    for ft, fc, tc, conf, _ in in_rels[:max_relations_per_dir]:
+        entry = f"← {ft}({fc}→{tc} @{conf})"
+        if conf >= _HIGH_CONF:
+            rel_parts_certain.append(entry)
+        else:
+            rel_parts_likely.append(entry)
+    in_extra = len(in_rels) - max_relations_per_dir
+    if in_extra > 0:
+        rel_parts_likely.append(f"...+{in_extra}条入向")
+
+    rel_lines = []
+    if rel_parts_certain:
+        rel_lines.append(f"[确定] {', '.join(rel_parts_certain)}")
+    if rel_parts_likely:
+        rel_lines.append(f"[可能] {', '.join(rel_parts_likely)}")
+    return " | ".join(rel_lines) if rel_lines else "无"
+
+
 def export_llm_chunks(graph: SchemaGraph,
                       output_path: Optional[str] = None,
                       min_confidence: float = 0.65,
@@ -98,19 +231,22 @@ def export_llm_chunks(graph: SchemaGraph,
     """
     将图谱导出为 LLM 紧凑文本块列表。
 
+    宽表（列数 > _WIDE_TABLE_COL_THRESHOLD）自动拆分为多个列组 chunk，
+    每组 _GROUP_MAX_COLS 列，保证所有列对 LLM 可见，不再截断为 "...+N列"。
+
     Args:
         graph: 已构建的 SchemaGraph
         output_path: 可选，输出到文件（.md 或 .jsonl）
-        min_confidence: 关系最低置信度阈值（低于此的不导出）
+        min_confidence: 关系最低置信度阈值
         max_relations_per_dir: 每个方向（出/入）最多导出的关系数
         analysis: AnalysisResult（可选）
 
     Returns:
-        每张表一个字符串的列表
+        chunk 字符串列表（宽表会产生多个 chunk）
     """
     # 预构建关系索引：table → outgoing / incoming
-    outgoing = defaultdict(list)
-    incoming = defaultdict(list)
+    outgoing: Dict[str, list] = defaultdict(list)
+    incoming: Dict[str, list] = defaultdict(list)
     for rel in graph.relations:
         if rel.confidence < min_confidence:
             continue
@@ -123,9 +259,14 @@ def export_llm_chunks(graph: SchemaGraph,
             rel.confidence, rel.discovery_method
         ))
 
-    _HIGH_CONF = 0.8
-
     chunks = []
+    # JSONL 模式下 records 保存结构化元数据 + text
+    # 字段：id, table_name, chunk_type, chunk_group, text
+    #   id          — 向量库主键（向后兼容格式：table 或 table__gN）
+    #   table_name  — 始终等于原始表名（消费侧无需解析 id）
+    #   chunk_type  — "table"（窄表完整 chunk）| "table_group"（宽表列组 chunk）
+    #   chunk_group — 列组序号（窄表为 null，宽表从 1 开始）
+    records = []
 
     for name in sorted(graph.tables.keys()):
         table = graph.tables[name]
@@ -133,131 +274,124 @@ def export_llm_chunks(graph: SchemaGraph,
         pk = table.primary_key or "-"
         col_count = len(table.columns)
         row_count = table.row_count
+        file_name = Path(table.file_path).name
 
-        # 列摘要（含值域信息）
-        fk_map = {fc: (tt, tc) for fc, tt, tc, _, _ in outgoing.get(name, [])}
-        col_parts = []
-        for col in table.columns:
-            cn = col['name']
-            dt = col.get('dtype', '?')
-            sv = col.get('sample_values', [])
+        # FK 映射：本表出向关系 column → (target_table, target_col)
+        fk_map: Dict[str, Tuple[str, str]] = {
+            fc: (tt, tc) for fc, tt, tc, _, _ in outgoing.get(name, [])
+        }
 
-            if cn in fk_map:
-                tt, tc = fk_map[cn]
-                part = f"{cn}({dt})→{tt}.{tc}"
-            elif cn == pk and sv:
-                if dt == 'int' and len(sv) >= 2:
-                    part = f"{cn}({dt})[{sv[0]}~{sv[-1]},共{len(sv)}]"
-                else:
-                    part = f"{cn}({dt})"
-            elif cn in (table.enum_columns or {}):
-                evals = table.enum_columns[cn]
-                text_vals = [str(v) for v in evals[:4]
-                             if not str(v).replace('.', '').replace('-', '').isdigit()]
-                if text_vals:
-                    part = f"{cn}({dt})[{','.join(text_vals)}]"
-                elif len(evals) <= 10:
-                    part = f"{cn}({dt})[{','.join(str(v) for v in evals[:6])}]"
-                else:
-                    part = f"{cn}({dt})"
-            else:
-                part = f"{cn}({dt})"
-            col_parts.append(part)
-        if len(col_parts) > 25:
-            col_str = ", ".join(col_parts[:25]) + f", ...+{len(col_parts)-25}列"
-        else:
-            col_str = ", ".join(col_parts)
+        # 关联摘要（所有 chunk 共享同一份关联描述）
+        rel_str = _build_rel_str(outgoing, incoming, name, max_relations_per_dir)
 
-        # 关联摘要 — 分层: [确定] conf >= 0.8, [可能] 0.65 <= conf < 0.8
-        out_rels = sorted(outgoing.get(name, []), key=lambda x: -x[3])
-        in_rels = sorted(incoming.get(name, []), key=lambda x: -x[3])
-
-        rel_parts_certain = []
-        rel_parts_likely = []
-
-        for fc, tt, tc, conf, _ in out_rels[:max_relations_per_dir]:
-            tag = "确定" if conf >= _HIGH_CONF else "可能"
-            entry = f"→ {tt}({fc}→{tc} @{conf})"
-            if conf >= _HIGH_CONF:
-                rel_parts_certain.append(entry)
-            else:
-                rel_parts_likely.append(entry)
-        out_extra = len(out_rels) - max_relations_per_dir
-        if out_extra > 0:
-            rel_parts_likely.append(f"...+{out_extra}条出向")
-
-        for ft, fc, tc, conf, _ in in_rels[:max_relations_per_dir]:
-            entry = f"← {ft}({fc}→{tc} @{conf})"
-            if conf >= _HIGH_CONF:
-                rel_parts_certain.append(entry)
-            else:
-                rel_parts_likely.append(entry)
-        in_extra = len(in_rels) - max_relations_per_dir
-        if in_extra > 0:
-            rel_parts_likely.append(f"...+{in_extra}条入向")
-
-        rel_lines = []
-        if rel_parts_certain:
-            rel_lines.append(f"[确定] {', '.join(rel_parts_certain)}")
-        if rel_parts_likely:
-            rel_lines.append(f"[可能] {', '.join(rel_parts_likely)}")
-        rel_str = " | ".join(rel_lines) if rel_lines else "无"
-
-        # 代表性枚举值描述
-        enum_hint = ""
-        if table.enum_columns:
-            hints = []
-            for ecol, evals in list(table.enum_columns.items())[:2]:
-                text_vals = [str(v) for v in evals[:5]
-                             if not str(v).replace('.', '').replace('-', '').isdigit()]
-                if text_vals:
-                    hints.append(f"{ecol}=[{','.join(text_vals[:3])}]")
-            if hints:
-                enum_hint = f"- 枚举: {'; '.join(hints)}\n"
-
-        chunk = (
-            f"## 表: {name} [{domain}]\n"
-            f"- 文件: {Path(table.file_path).name} | sheet: {table.sheet_name}\n"
-            f"- 行数: {row_count} | 列数: {col_count} | 主键: {pk}\n"
-            f"- 列: {col_str}\n"
-            f"{enum_hint}"
-            f"- 关联: {rel_str}\n"
-        )
-        # 追加分析标签
+        # 分析标签（所有 chunk 共享）
+        analysis_line = ""
         if analysis:
             tags = []
             if analysis.orphans and name in analysis.orphans:
                 tags.append("孤立表")
             if analysis.centrality and analysis.centrality.get(name, 0) > 0:
-                tags.append(
-                    f"中心性:{analysis.centrality[name]:.1f}")
-            # 同模块邻居
+                tags.append(f"中心性:{analysis.centrality[name]:.1f}")
             if analysis.modules:
                 for mod in analysis.modules:
                     if name in mod:
-                        neighbors = sorted(
-                            n for n in mod if n != name)[:8]
+                        neighbors = sorted(n for n in mod if n != name)[:8]
                         if neighbors:
-                            tags.append(
-                                f"同模块: {', '.join(neighbors)}")
+                            tags.append(f"同模块: {', '.join(neighbors)}")
                         break
             if tags:
-                chunk += f"- 标注: {' | '.join(tags)}\n"
-        chunks.append(chunk)
+                analysis_line = f"- 标注: {' | '.join(tags)}\n"
+
+        # 枚举提示（只在第一个 chunk 中展示）
+        enum_hint = ""
+        if table.enum_columns:
+            hints = []
+            for ecol, evals in list(table.enum_columns.items())[:3]:
+                text_vals = [str(v) for v in evals[:5]
+                             if not str(v).replace('.', '').replace('-', '').isdigit()]
+                if text_vals:
+                    hints.append(f"{ecol}=[{','.join(text_vals[:4])}]")
+            if hints:
+                enum_hint = f"- 枚举: {'; '.join(hints)}\n"
+
+        # ── 窄表（≤ 阈值列）：保持原有单 chunk 格式 ──
+        if col_count <= _WIDE_TABLE_COL_THRESHOLD:
+            col_parts = []
+            for col in table.columns:
+                cn = col['name']
+                dt = col.get('dtype', '?')
+                sv = col.get('sample_values', [])
+                col_parts.append(_build_col_part(
+                    cn, dt, sv, pk, fk_map, table.enum_columns,
+                    stats=col.get('stats'), pack_info=col.get('pack_info')))
+            col_str = ", ".join(col_parts)
+
+            chunk = (
+                f"## 表: {name} [{domain}]\n"
+                f"- 文件: {file_name} | sheet: {table.sheet_name}\n"
+                f"- 行数: {row_count} | 列数: {col_count} | 主键: {pk}\n"
+                f"- 列: {col_str}\n"
+                f"{enum_hint}"
+                f"- 关联: {rel_str}\n"
+                f"{analysis_line}"
+            )
+            chunks.append(chunk)
+            records.append({
+                "id": name,
+                "table_name": name,
+                "chunk_type": "table",
+                "chunk_group": None,
+                "text": chunk,
+            })
+
+        # ── 宽表（> 阈值列）：按列组拆分为多个 chunk ──
+        else:
+            col_groups = _group_columns_for_wide_table(table, fk_map)
+            col_lookup = {c['name']: c for c in table.columns}
+            total_groups = len(col_groups)
+
+            for g_idx, (group_label, group_col_names) in enumerate(col_groups, start=1):
+                col_parts = []
+                for cn in group_col_names:
+                    col = col_lookup.get(cn, {})
+                    dt = col.get('dtype', '?')
+                    sv = col.get('sample_values', [])
+                    col_parts.append(_build_col_part(
+                        cn, dt, sv, pk, fk_map, table.enum_columns,
+                        stats=col.get('stats'), pack_info=col.get('pack_info')))
+                col_str = ", ".join(col_parts)
+
+                # 第一个 chunk 包含枚举提示和分析标签
+                extra = (enum_hint if g_idx == 1 else "") + (analysis_line if g_idx == 1 else "")
+
+                chunk = (
+                    f"## 表: {name} [{domain}] — {group_label} ({g_idx}/{total_groups})\n"
+                    f"- 文件: {file_name} | sheet: {table.sheet_name}\n"
+                    f"- 行数: {row_count} | 总列数: {col_count} | 主键: {pk} | "
+                    f"本组列数: {len(group_col_names)}\n"
+                    f"- 列: {col_str}\n"
+                    f"{extra}"
+                    f"- 关联: {rel_str}\n"
+                )
+                chunks.append(chunk)
+                chunk_id = name if total_groups == 1 else f"{name}__g{g_idx}"
+                records.append({
+                    "id": chunk_id,
+                    "table_name": name,
+                    "chunk_type": "table_group",
+                    "chunk_group": g_idx,
+                    "text": chunk,
+                })
 
     # 写文件
     if output_path:
         p = Path(output_path)
         if p.suffix == '.jsonl':
-            records = [
-                {"id": name, "text": chunk}
-                for name, chunk in zip(sorted(graph.tables.keys()), chunks)
-            ]
             atomic_write_jsonl(output_path, records)
         else:
             text = (
                 f"# Schema Graph LLM Export\n"
-                f"# {len(chunks)} tables, "
+                f"# {len(records)} chunks from {len(graph.tables)} tables, "
                 f"{len(graph.relations)} relations\n\n"
                 + "\n".join(chunks) + "\n"
             )

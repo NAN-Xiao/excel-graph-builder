@@ -9,7 +9,7 @@
 import os
 import time
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, Set, Tuple, List, Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -26,6 +26,7 @@ from indexer.discovery import (
     AbbreviationDiscovery,
     TransitiveDiscovery,
     NamingConventionDiscovery,
+    PackArrayDiscovery,
     FeedbackManager,
     classify_domain,
 )
@@ -43,6 +44,8 @@ class BuildResult:
     discover_time: float = 0.0
     total_time: float = 0.0
     analysis: Optional[object] = None  # AnalysisResult (避免循环导入用 object)
+    # pack_array 弱信号候选：不进入主关系图，只供导出到 pack_array_candidates.json
+    pack_array_candidates: List[RelationEdge] = field(default_factory=list)
 
     def summary(self) -> str:
         return (
@@ -77,6 +80,8 @@ class GraphBuilder:
             AbbreviationDiscovery(
                 confidence_threshold=self.config.abbrev_confidence_threshold
             ),
+            # Pack 数组策略：发现 "101|102|103" 类字符串列的隐式 FK
+            PackArrayDiscovery(),
             TransitiveDiscovery()
         ]
 
@@ -103,7 +108,9 @@ class GraphBuilder:
             self._scanner = DirectoryScanner(
                 data_root=self.config.data_root,
                 max_sample_rows=self.config.max_sample_rows,
-                max_workers=self.config.max_workers
+                max_workers=self.config.max_workers,
+                # max_rows_per_table=None 表示读全量；设置上限仅用于内存受限场景
+                max_read_rows=self.config.max_rows_per_table or None,
             )
         return self._scanner
 
@@ -179,6 +186,7 @@ class GraphBuilder:
         self.logger.info("\n[关系发现] 执行所有策略...")
 
         # 增量模式的核心：只清除受影响表的关系，保留其余
+        # 同时顺带清理旧图中可能残留的 pack_array 关系（迁移兼容）
         changed_tables: Optional[Set[str]] = None
         if incremental and affected_tables:
             before_count = len(graph.relations)
@@ -186,6 +194,7 @@ class GraphBuilder:
                 r for r in graph.relations
                 if r.from_table not in affected_tables
                 and r.to_table not in affected_tables
+                and r.discovery_method != 'pack_array'   # 剥离残留 pack_array
             ]
             kept = len(graph.relations)
             self.logger.info(
@@ -195,16 +204,39 @@ class GraphBuilder:
             )
             changed_tables = affected_tables
         elif incremental and not affected_tables:
+            # 无文件变更，但仍需剥离旧 pack_array 关系（首次升级时执行一次）
+            old_pack = [r for r in graph.relations if r.discovery_method == 'pack_array']
+            if old_pack:
+                graph.relations = [r for r in graph.relations
+                                   if r.discovery_method != 'pack_array']
+                self.logger.info(
+                    f"  [迁移] 从主图剥离 {len(old_pack)} 条旧 pack_array 关系")
+                # 把它们放进候选集，避免信息丢失
+                result.pack_array_candidates.extend(old_pack)
+
             self.logger.info("  无变更，跳过关系发现")
             result.discover_time = 0
             result.table_count = len(graph.tables)
             result.relation_count = len(graph.relations)
             result.total_time = time.time() - total_start
             return graph, result
+        else:
+            # 全量构建：清空主图里所有旧 pack_array 关系
+            pack_residual = sum(1 for r in graph.relations
+                                if r.discovery_method == 'pack_array')
+            if pack_residual:
+                graph.relations = [r for r in graph.relations
+                                   if r.discovery_method != 'pack_array']
+                self.logger.info(f"  [迁移] 清理旧 pack_array 关系 {pack_residual} 条")
 
-        # Transitive 依赖前面策略的结果，需要后执行
+        # 策略分组：
+        #   independent — 可并行、不依赖其他策略输出（不含 pack_array / transitive）
+        #   pack_strats — PackArrayDiscovery：结果只进候选集，不进主图
+        #   dependent   — TransitiveDiscovery：依赖主图关系，串行最后执行
         independent = [s for s in self.discovery_strategies
-                       if not isinstance(s, TransitiveDiscovery)]
+                       if not isinstance(s, (TransitiveDiscovery, PackArrayDiscovery))]
+        pack_strats = [s for s in self.discovery_strategies
+                       if isinstance(s, PackArrayDiscovery)]
         dependent = [s for s in self.discovery_strategies
                      if isinstance(s, TransitiveDiscovery)]
 
@@ -221,7 +253,16 @@ class GraphBuilder:
                     self.progress_callback(
                         "discovery", i + 1, len(self.discovery_strategies))
 
-        # 串行执行依赖策略（transitive 在全量关系上运行）
+        # 串行执行 pack_array 策略 — 结果不进主图，只进候选集
+        for strategy in pack_strats:
+            pack_rels = self._run_strategy(strategy, graph, changed_tables)
+            result.pack_array_candidates.extend(pack_rels)
+            self.logger.info(
+                f"  [PackArray候选] 发现 {len(pack_rels)} 条候选弱信号"
+                f"（不进主图，仅导出至 pack_array_candidates.json）"
+            )
+
+        # 串行执行依赖策略（transitive 在主图关系上运行，不含 pack_array）
         for strategy in dependent:
             rels = self._run_strategy(strategy, graph, changed_tables)
             graph.relations.extend(rels)
@@ -418,8 +459,8 @@ class GraphBuilder:
                 seen[key] = rel
 
         # Step 2: 每对表之间只保留 top-N 关系
-        # 优先保留 naming_convention / abbreviation 发现的关系
-        _MAX_PER_TABLE_PAIR = 2
+        # pack_array 已从主图剥离，这里不会出现 pack_array 方法的关系
+        _MAX_PER_TABLE_PAIR = 3
         _METHOD_PRIORITY = {
             'naming_convention': 3,
             'abbreviation': 2,

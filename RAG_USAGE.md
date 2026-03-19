@@ -1,1236 +1,737 @@
-# 游戏配置表 Graph — 外部 RAG 系统接入指南
+# 游戏配置表证据系统 — 外部 RAG 系统接入指南 v4
 
-> 本文档面向需要接入当前图谱数据的**另一个 RAG 系统**，提供完整的数据说明、加载方式、召回接口和使用示例。
-
-## 一、数据资产总览
-
-所有导出文件在根目录的 `graph/` 下（与 `dist/` 和 Excel 文件夹同级）。当前版本：**1559 张表，32334 条关系**。
-
-```
-excel_data\          ← 根目录
-  dist\              ← 部署包（indexer.exe + configs）
-  excel\             ← Excel 数据
-  graph\             ← 数据资产（下方所有文件在这里）
-```
-
-| 文件 | 大小 | 用途 | 加载优先级 |
-|:--|:--|:--|:--|
-| `schema_summary.txt` | 42 KB | 全量表名按域分组，注入 system prompt | **必须** |
-| `column_index.json` | 1.0 MB | 列名→表名倒排索引，精确定位 | **必须** |
-| `llm_chunks.jsonl` | 1.6 MB | 每表一条摘要（含值域信息），向量化召回 | **必须** |
-| `schema_graph.json` | ~8 MB | 主图谱：表结构+关系+sample_values（持久化截断至30个） | **必须** |
-| `analysis.json` | ~50 KB | 图算法分析：centrality / modules / orphans | 推荐 |
-| `cell_locator.json` | 2.6 MB | 单元格定位：表→文件→行号→列号 | 推荐 |
-| `relation_graph.json` | 21 MB | 邻接表+JOIN 条件+关系证据（双向） | 可选 |
-| `table_profiles.jsonl` | ~5 MB | 每表富元数据 profile + 中文描述 + 缩写展开 searchable_text | 可选 |
-| `join_paths.json` | ~20 MB | 预计算 1 跳直接 JOIN 路径 | 可选 |
-| `value_index.json` | ~1 MB | 跨表共享值反查索引（值→出现的表和列） | 可选 |
-| `domain_graph.json` | ~10 KB | 域级关系图（域→域的聚合关系统计） | 推荐 |
-| `enum_cross_ref.json` | ~20 KB | 枚举值交叉索引（跨表共享枚举空间的列对） | 可选 |
-
-> **v2 瘦身说明：** 相比 v1，`schema_graph.json` 从 52MB 降至 ~8MB（持久化时每列 sample_values 截断为 30 个，内存中关系发现仍使用完整采样）；`table_profiles.jsonl` 从 27MB 降至 ~5MB；`join_paths.json` 从 358MB 降至 ~20MB（默认 1 跳）。
+> 面向需要接入本系统数据的 **外部 RAG 系统**，完整描述产物目录、四层召回架构、Python API、数值分析模式，以及构建后回归/回退机制。
 
 ---
 
-## 二、快速接入（3 步）
+## 目录
 
-### Step 1：加载数据
+1. [系统架构概述](#1-系统架构概述)
+2. [数据目录与发布约定](#2-数据目录与发布约定)
+3. [快速接入（最小可用）](#3-快速接入最小可用)
+4. [层1 — 表级召回层](#4-层1--表级召回层)
+5. [层2 — 列级裁剪层](#5-层2--列级裁剪层)
+6. [层3 — 行级取数层](#6-层3--行级取数层)
+7. [层4 — 证据组装层](#7-层4--证据组装层)
+8. [pack_array 候选关系](#8-pack_array-候选关系)
+9. [调优与进阶](#9-调优与进阶)
+10. [常见问题](#10-常见问题)
+
+---
+
+## 1. 系统架构概述
+
+```
+用户自然语言问题
+        │
+        ▼
+┌───────────────────────────────────────────────────────┐
+│  层1: 表级召回层                                       │
+│  schema_summary.txt → LLM 意图提取 → 种子表           │
+│  llm_chunks.jsonl   → 向量召回 top-K                  │
+│  relation_graph.json → BFS 扩展邻居                   │
+│  analysis.json      → centrality / module 加权排序    │
+└────────────────────────┬──────────────────────────────┘
+                         │ table_names: ["hero_base", ...]
+                         ▼
+┌───────────────────────────────────────────────────────┐
+│  层2: 列级裁剪层                                       │
+│  table_profiles.jsonl 每列携带：                       │
+│    semantic_type  identifier/metric/enum/flag/...      │
+│    domain_role    id_key/stat_atk/cost/level_grade/... │
+│    metric_tag     hp/attack/cost/rate/...              │
+│  EvidenceAssembler 按 query 词义打分，保留 ≤25 列      │
+└────────────────────────┬──────────────────────────────┘
+                         │ selected_columns
+                         ▼
+┌───────────────────────────────────────────────────────┐
+│  层3: 行级取数层                                       │
+│  RowRetriever.generate_predicates(query, profile)      │
+│    → ID 精确匹配 / 枚举命中 / 数值范围谓词             │
+│  RowRetriever.fetch_rows(profile, predicates)          │
+│    → 回源读 Excel，只返回命中行块                      │
+└────────────────────────┬──────────────────────────────┘
+                         │ key_rows
+                         ▼
+┌───────────────────────────────────────────────────────┐
+│  层4: 证据组装层                                       │
+│  EvidenceAssembler.assemble()                          │
+│    ① schema     — 裁剪后的列 schema                   │
+│    ② join       — 表间 JOIN 路径                       │
+│    ③ key_rows   — 谓词过滤行块（Markdown 表格）        │
+│    ④ stat_summary — 数值/枚举统计摘要                  │
+│  → to_prompt_text() → 注入 LLM                        │
+└───────────────────────────────────────────────────────┘
+```
+
+---
+
+## 2. 数据目录与发布约定
+
+构建产物位于 `graph/` 目录。推荐外部 RAG 系统始终优先读取 `graph/current/`，不要直接消费 `graph/builds/<build_id>/`。
+
+目录约定：
+
+| 路径 | 含义 | 使用建议 |
+|:--|:--|:--|
+| `graph/current/` | 当前已发布、可在线消费的版本 | **默认读取这里** |
+| `graph/latest_success/` | 最近一次通过校验的成功版本 | 回退 / 对账 |
+| `graph/builds/<build_id>/` | 单次构建的独立版本目录 | 调试 / 历史追溯 |
+| `graph/reports/<build_id>.json/.md` | 构建后回归报表 | 运维和验收 |
+| `graph/regression_queries.json` | 构建后自动回归样例配置 | 推荐维护 |
+| `graph/alerts.log` | 本地告警摘要 | 推荐监控 |
+
+发布规则：
+
+- 构建先写入 `graph/builds/<build_id>/`
+- 然后执行完整性检查和回归
+- 只有通过门槛才同步到 `graph/current/`
+- 若出现 `P0`，则继续保留上一版 `graph/current/`，不会让坏版本覆盖线上
+
+每个已发布版本目录中自动导出以下 15 个文件：
+
+| # | 文件 | 用途 | 召回层 | 加载建议 |
+|:--|:--|:--|:--|:--|
+| 1 | `schema_summary.txt` | 全量表名按域分组，注入 system prompt（≈500 tokens） | 层1 | **必须**，常驻内存 |
+| 2 | `llm_chunks.jsonl` | 每表/列组一条 JSON，向量化召回 | 层1 | **必须**，建向量索引 |
+| 3 | `llm_chunks.md` | 同上 Markdown 版，供人工阅读调试 | — | 调试用 |
+| 4 | `column_index.json` | 列名→表名倒排索引（精确/归一化/中文切词） | 层1 | **必须**，内存加载 |
+| 5 | `relation_graph.json` | 邻接表+JOIN 条件，BFS 扩展候选表 | 层1 | **必须**，内存加载 |
+| 6 | `join_paths.json` | 预计算 1~2 跳 JOIN 路径 | 层1/层4 | **必须** |
+| 7 | `table_profiles.jsonl` | 每表富元数据（含 semantic_type/domain_role/metric_tag） | 层2/层4 | **必须** |
+| 8 | `analysis.json` | PageRank 中心性/社区模块/孤立表/关键路径 | 层1 | 推荐 |
+| 9 | `cell_locator.json` | 表→文件→行号→列号，精确溯源 | 辅助 | 推荐 |
+| 10 | `value_index.json` | 跨表共享值反查（值→出现的表和列） | 层1 | 推荐 |
+| 11 | `domain_graph.json` | 域级关系聚合统计（hero↔skill 共 N 条关系） | 层1 | 推荐 |
+| 12 | `enum_cross_ref.json` | 跨表共享枚举空间列对 | 层2 | 可选 |
+| 13 | `data_health.json` | 数据质量报告（空值率/数值范围/pack列/枢纽表） | 调试 | 可选 |
+| 14 | `pack_array_candidates.json` | pack_array 弱信号候选关系（已从主图剥离） | 审核 | 可选 |
+| 15 | `evidence_config.json` | EvidenceAssembler 初始化配置 | 层4 | 推荐 |
+
+---
+
+## 3. 快速接入（最小可用）
 
 ```python
 import json
 from pathlib import Path
 from collections import defaultdict
 
-DATA = Path("<excel_data>/graph")  # 根目录下的 graph/ 目录
+ROOT = Path("path/to/graph")
+DATA = ROOT / "current"        # 推荐：始终读取 current
 
-# 1. 全量表名摘要（~42KB，常驻 system prompt）
+# ① 全量表名摘要（注入 system prompt）
 SCHEMA_SUMMARY = (DATA / "schema_summary.txt").read_text(encoding="utf-8")
 
-# 2. 列名倒排索引（7235 个列名 → 表名映射）
+# ② 列名倒排索引
 with open(DATA / "column_index.json", encoding="utf-8") as f:
     COL_INDEX: dict = json.load(f)
-    # 兼容旧格式
-    if "column_to_tables" in COL_INDEX:
-        COL_INDEX = COL_INDEX["column_to_tables"]
 
-# 3. 每表摘要 chunk（1559 条，用于向量化）
-CHUNKS: dict[str, str] = {}
+# ③ llm_chunks — 向量化召回用文本 + 元数据
+CHUNKS: dict[str, dict] = {}
 with open(DATA / "llm_chunks.jsonl", encoding="utf-8") as f:
     for line in f:
         obj = json.loads(line)
-        CHUNKS[obj["id"]] = obj["text"]
+        # v3 格式：每条记录含 id / table_name / chunk_type / chunk_group / text
+        CHUNKS[obj["id"]] = obj
 
-# 4. 主图谱（表结构 + 关系，~8MB）
-with open(DATA / "schema_graph.json", encoding="utf-8") as f:
-    GRAPH = json.load(f)
+# ④ 主图（表结构 + 关系）
+with open(DATA / "relation_graph.json", encoding="utf-8") as f:
+    REL_GRAPH: dict = json.load(f)   # REL_GRAPH["tables"][name]["neighbors"]
 
-# 5. 预构建关系索引（加速图扩展，~6ms）
-REL_FROM: dict[str, list] = defaultdict(list)  # table → outgoing relations
-REL_TO: dict[str, list] = defaultdict(list)    # table → incoming relations
-for rel in GRAPH["relations"]:
-    REL_FROM[rel["from_table"]].append(rel)
-    REL_TO[rel["to_table"]].append(rel)
-
-# 6. 单元格定位索引（可选）
-CELL_LOCATOR: dict = {}
-cell_loc_path = DATA / "cell_locator.json"
-if cell_loc_path.exists():
-    with open(cell_loc_path, encoding="utf-8") as f:
-        CELL_LOCATOR = json.load(f)["tables"]
-
-# 7. 图算法分析结果（推荐）
-CENTRALITY, MODULES = {}, []
-analysis_path = DATA / "analysis.json"
-if analysis_path.exists():
-    with open(analysis_path, encoding="utf-8") as f:
-        _analysis = json.load(f)
-    CENTRALITY = _analysis.get("centrality", {})   # 表名→中心性 0-100
-    MODULES = _analysis.get("modules", [])          # 社区聚类
-
-# 8. 域级关系图（推荐，~10KB）
-DOMAIN_GRAPH = {}
-domain_path = DATA / "domain_graph.json"
-if domain_path.exists():
-    with open(domain_path, encoding="utf-8") as f:
-        DOMAIN_GRAPH = json.load(f)
-
-# 9. 跨表值反查索引（可选）
-VALUE_INDEX = {}
-vidx_path = DATA / "value_index.json"
-if vidx_path.exists():
-    with open(vidx_path, encoding="utf-8") as f:
-        VALUE_INDEX = json.load(f).get("values", {})
-
-# 10. 枚举值交叉索引（可选）
-ENUM_XREF = []
-exref_path = DATA / "enum_cross_ref.json"
-if exref_path.exists():
-    with open(exref_path, encoding="utf-8") as f:
-        ENUM_XREF = json.load(f).get("cross_refs", [])
-```
-
-加载耗时：首次约 **120ms**，内存占用约 **80MB**（v2 瘦身后）。
-
-### Step 2：向量化 llm_chunks
-
-将 `CHUNKS` 中的 1559 条 `text` 做 embedding 存入向量数据库。
-
-```python
-# 示例：用 chromadb
-import chromadb
-
-client = chromadb.PersistentClient(path="./chroma_db")
-collection = client.get_or_create_collection("game_tables")
-
-ids = list(CHUNKS.keys())
-texts = [CHUNKS[k] for k in ids]
-collection.upsert(ids=ids, documents=texts)
-```
-
-每条 chunk 约 800-1800 字符，总共 1559 条，embedding 一次约 30 秒。
-
-### Step 3：接入查询接口
-
-见下方「核心接口」。
-
----
-
-## 三、核心接口
-
-### 接口 1：多路召回（推荐）
-
-```python
-def recall_tables(user_query: str, vector_db, top_k: int = 10) -> list[str]:
-    """
-    多路召回相关表名，返回排序后的表名列表。
-    
-    召回策略：
-      1. 向量语义召回（模糊匹配）
-      2. 列名精确匹配（精确匹配）
-      3. 域名匹配（领域匹配）
-    
-    Returns:
-        排序后的表名列表（最相关在前）
-    """
-    # ── 路径 1: 向量语义召回 ──
-    hits = vector_db.query(query_texts=[user_query], n_results=top_k)
-    vec_tables = hits["ids"][0] if hits["ids"] else []
-
-    # ── 路径 2: 列名精确/模糊匹配 ──
-    col_tables = find_tables_by_column(user_query)
-
-    # ── 路径 3: 域名匹配 ──
-    domain_kw = {
-        "英雄": "hero", "技能": "skill", "buff": "skill",
-        "道具": "item", "装备": "item", "商店": "item",
-        "联盟": "alliance", "建筑": "building",
-        "怪物": "monster", "战斗": "battle", "任务": "quest",
-    }
-    domain_tables = []
-    for kw, domain in domain_kw.items():
-        if kw in user_query:
-            domain_tables.extend(
-                name for name, t in GRAPH["tables"].items()
-                if t.get("domain_label") == domain
-            )
-
-    # ── 合并去重（向量优先） ──
-    seen = set()
-    result = []
-    for t in vec_tables + col_tables + domain_tables:
-        if t not in seen and t in GRAPH["tables"]:
-            seen.add(t)
-            result.append(t)
-    return result
-
-
-def find_tables_by_column(query: str) -> list[str]:
-    """通过列名关键词查找包含该列的表"""
-    tables = set()
-    for col_name, table_list in COL_INDEX.items():
-        # 对查询中每个关键词做子串匹配
-        for kw in _extract_keywords(query):
-            if kw in col_name:
-                tables.update(table_list)
-    return list(tables)
-
-
-def _extract_keywords(query: str) -> list[str]:
-    """从查询中提取关键词（简单实现，可替换为分词器）"""
-    # 去掉常见停用词，按 2-4 字滑窗提取
-    stop = {"的", "是", "有", "在", "了", "吗", "呢", "怎么", "什么", "哪些", "如何"}
-    words = [w for w in query if w not in stop]
-    keywords = set()
-    text = "".join(words)
-    for length in [4, 3, 2]:
-        for i in range(len(text) - length + 1):
-            keywords.add(text[i:i+length])
-    return list(keywords)
-```
-
-### 接口 2：图扩展
-
-```python
-def expand_tables(seed_tables: list[str],
-                  min_confidence: float = 0.7,
-                  max_total: int = 15) -> list[str]:
-    """
-    从种子表出发，沿关系图做 1-hop 扩展。
-    
-    Args:
-        seed_tables: 召回的种子表名列表
-        min_confidence: 关系置信度下限
-        max_total: 最终返回的最大表数
-    
-    Returns:
-        扩展后的表名列表（种子表在前，扩展表在后）
-    """
-    expanded = set()
-    seed_set = set(seed_tables)
-
-    for t in seed_tables:
-        # outgoing: 本表引用的其他表
-        for rel in REL_FROM.get(t, []):
-            if rel["confidence"] >= min_confidence:
-                expanded.add(rel["to_table"])
-        # incoming: 引用本表的其他表
-        for rel in REL_TO.get(t, []):
-            if rel["confidence"] >= min_confidence:
-                expanded.add(rel["from_table"])
-
-    extra = [t for t in expanded if t not in seed_set]
-    return (seed_tables + extra)[:max_total]
-```
-
-### 接口 3：组装 Context
-
-```python
-def build_context(tables: list[str],
-                  include_joins: bool = True,
-                  include_samples: bool = False) -> str:
-    """
-    将表列表组装为 LLM 可理解的 context 文本。
-    
-    Args:
-        tables: 最终要注入的表名列表
-        include_joins: 是否附加表间 JOIN 关系
-        include_samples: 是否附加 sample_values（增加细节但更长）
-    
-    Returns:
-        组装好的 context 文本
-    """
-    parts = []
-
-    # 每张表的摘要
-    for t in tables:
-        if t in CHUNKS:
-            parts.append(CHUNKS[t])
-
-        # 可选：追加 sample_values 细节
-        # 注意：持久化的 sample_values 最多 30 个（v2 瘦身）
-        if include_samples and t in GRAPH["tables"]:
-            table_info = GRAPH["tables"][t]
-            for col in table_info["columns"][:10]:
-                sv = col.get("sample_values", [])
-                if sv:
-                    parts.append(
-                        f"  {t}.{col['name']}(采样{len(sv)}值): "
-                        f"{str(sv[:10])}"
-                    )
-
-    # 补充表间 JOIN 关系
-    if include_joins:
-        table_set = set(tables)
-        joins = []
-        for t in tables:
-            for rel in REL_FROM.get(t, []):
-                if rel["to_table"] in table_set and rel["confidence"] >= 0.7:
-                    joins.append(
-                        f"JOIN: {rel['from_table']}.{rel['from_column']} → "
-                        f"{rel['to_table']}.{rel['to_column']} "
-                        f"(置信度:{rel['confidence']:.2f})"
-                    )
-        if joins:
-            parts.append("\n".join(joins))
-
-    return "\n\n".join(parts)
-```
-
-### 接口 4：单元格定位
-
-```python
-def locate_cell(table_name: str, pk_value, column_name: str) -> dict | None:
-    """
-    定位到具体的 Excel 单元格地址。
-    
-    Args:
-        table_name: 表名（如 "hero"）
-        pk_value: 主键值（如 5）
-        column_name: 列名（如 "英雄主动技能ID"）
-    
-    Returns:
-        {
-          "file": "hero.xlsx",
-          "sheet": "hero",
-          "cell": "P6",           # Excel 单元格地址
-          "excel_row": 6,
-          "excel_col": "P"
-        }
-        或 None（定位失败）
-    
-    覆盖范围:
-        261/1559 张表可精确到单元格（行数≤200且主键唯一的表）
-        其余表只能定位到列 + 数据起始行
-    """
-    if not CELL_LOCATOR:
-        return None
-
-    loc = CELL_LOCATOR.get(table_name)
-    if not loc:
-        return None
-
-    col_info = loc["columns"].get(column_name)
-    if not col_info:
-        return None
-
-    excel_col = col_info["excel_col"]
-
-    # 精确行定位（小表）
-    pk_map = loc.get("pk_to_excel_row", {})
-    excel_row = pk_map.get(str(pk_value))
-
-    if excel_row:
-        return {
-            "file": loc["file"],
-            "sheet": loc["sheet"],
-            "cell": f"{excel_col}{excel_row}",
-            "excel_row": excel_row,
-            "excel_col": excel_col,
-        }
-
-    # 大表：返回列+起始行
-    return {
-        "file": loc["file"],
-        "sheet": loc["sheet"],
-        "cell": None,
-        "excel_col": excel_col,
-        "data_start_row": loc["data_start_row"],
-        "hint": f"在 {loc['file']} 的 {loc['sheet']} sheet "
-                f"的 {excel_col} 列查找主键={pk_value}",
-    }
-```
-
-### 接口 5：完整 answer（一站式）
-
-```python
-def answer(user_query: str, vector_db, llm_call) -> str:
-    """
-    一站式问答接口：召回 → 扩展 → 组装 → LLM 推理。
-    
-    Args:
-        user_query: 用户问题
-        vector_db: 向量数据库实例（需有 .query() 方法）
-        llm_call: LLM 调用函数 fn(system_prompt, user_msg) -> str
-    
-    Returns:
-        LLM 生成的回答文本
-    
-    典型延迟:
-        本地处理 ~5ms + LLM 推理 ~2-4s = 总计 ~2-4s
-    """
-    # 1. 多路召回
-    seed_tables = recall_tables(user_query, vector_db, top_k=10)
-
-    # 2. 图扩展
-    final_tables = expand_tables(seed_tables, min_confidence=0.7, max_total=15)
-
-    # 3. 组装 context
-    context = build_context(final_tables, include_joins=True)
-
-    # 4. 注入 LLM
-    system = f"""你是游戏配置数值分析助手。基于以下配置表元数据回答问题。
-
-规则：
-1. 只引用上下文中存在的表名和列名，不编造
-2. 跨表关系用 "A表.X列 → B表.Y列" 格式
-3. 引用数据时说明是全量还是采样
-4. 需要定位原始数据时给出 文件名/sheet/列名
-5. 不确定时回答"根据当前图谱数据无法确认"
-
-<全量表名索引>
-{SCHEMA_SUMMARY}
-</全量表名索引>
-
-<召回的配置表详情>
-{context}
-</召回的配置表详情>"""
-
-    return llm_call(system, user_query)
+# ⑤ 分析结果（centrality / modules / orphans）
+with open(DATA / "analysis.json", encoding="utf-8") as f:
+    ANALYSIS: dict = json.load(f)
+CENTRALITY: dict[str, float] = ANALYSIS.get("centrality", {})
+MODULES: list[list[str]] = ANALYSIS.get("modules", [])
+TABLE_MODULE: dict[str, int] = {t: i for i, m in enumerate(MODULES) for t in m}
 ```
 
 ---
 
-## 四、数据格式详解
+## 4. 层1 — 表级召回层
 
-### schema_graph.json — 主图谱
+### 4.1 LLM 意图提取（锁定种子表）
 
-```json
-{
-  "tables": {
-    "hero": {
-      "name": "hero",
-      "file_path": "hero.xlsx",
-      "sheet_name": "hero",
-      "row_count": 17,
-      "primary_key": "键值",
-      "domain_label": "hero",
-      "header_offset": 0,
-      "columns": [
-        {
-          "name": "英雄主动技能ID",
-          "dtype": "int",
-          "sample_values": [101, 102, 103],
-          "unique_count": 15,
-          "is_fk_candidate": true
-        }
-      ],
-      "enum_columns": {"英雄品质": [2, 3, 4, 5]},
-      "numeric_columns": ["基础战斗力", "baseHP"]
-    }
-  },
-  "relations": [
-    {
-      "from_table": "hero",
-      "from_column": "英雄主动技能ID",
-      "to_table": "skill",
-      "to_column": "键值",
-      "confidence": 0.77,
-      "relation_type": "fk_content_subset",
-      "discovery_method": "containment",
-      "evidence": "shared(15): 101,102,103..."
-    }
-  ]
-}
+```python
+import openai
+
+def find_seed_tables(query: str) -> list[str]:
+    """第一次 LLM 调用：从 schema_summary.txt 识别相关表名。"""
+    resp = openai.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": (
+                f"{SCHEMA_SUMMARY}\n\n"
+                "根据用户问题，从上方表名列表中找出最相关的 1-5 个表名，"
+                "只返回 JSON 数组，如 [\"hero_base\", \"skill_base\"]。"
+                "不存在的表名不要返回。"
+            )},
+            {"role": "user", "content": query},
+        ],
+        temperature=0,
+        response_format={"type": "json_object"},
+    )
+    data = json.loads(resp.choices[0].message.content)
+    # 兼容 {"tables": [...]} 或直接数组
+    if isinstance(data, list):
+        return data
+    for v in data.values():
+        if isinstance(v, list):
+            return v
+    return []
 ```
 
-**关键字段说明：**
+> **成本参考**：`schema_summary.txt` ≈ 800 tokens，gpt-4o-mini 单次 ~$0.0002，延迟 ~1s。
 
-| 字段 | 说明 |
-|:--|:--|
-| `row_count` | 数据行数（不含表头） |
-| `header_offset` | pandas header 后跳过的元数据行数（类型行等） |
-| `sample_values` | 列的采样值（持久化截断至 **30 个**；构建时内存中使用完整采样做关系发现） |
-| `enum_columns` | 枚举列及其所有值（唯一值少且比例低的列） |
-| `confidence` | 关系置信度 0-1（≥0.8 高信度，0.6-0.8 中等，<0.6 低） |
-| `relation_type` | `fk_naming_convention`(命名推断) / `fk_content_subset`(值包含) / `fk_abbreviation`(缩写匹配) / `inferred_transitive`(传递推断) |
-| `discovery_method` | 发现策略：`naming_convention` / `containment` / `abbreviation` / `transitive` |
-| `evidence` | 可读证据摘要（共享值样本、命名匹配说明等） |
+### 4.2 列名快速定位
 
-### llm_chunks.jsonl — 向量化摘要
+当用户问题直接提到列名时（如"看 quality 列"），用倒排索引直接定位：
 
-每行一个 JSON，共 1559 行。列摘要现在包含值域信息：
-
-```json
-{"id": "hero", "text": "## 表: hero [hero]\n- 文件: hero.xlsx | sheet: hero\n- 行数: 17 | 列数: 37 | 主键: 键值\n- 列: 键值(int)[1~1000,共17], 英雄名字(str), 英雄品质(int)[2,3,4,5], 英雄主动技能ID(int)→skill.键值, ...\n- 关联: → skill(英雄主动技能ID→键值 @0.77), ← monsterTroop_monsterHero(英雄ID→键值 @0.77)\n- 标注: 中心性:5.2 | 同模块: hero_hero_level, hero_hero_star, ...\n"}
+```python
+def tables_by_column(col_name: str) -> list[str]:
+    """精确列名 → 归属表名列表。"""
+    exact = COL_INDEX.get(col_name, [])
+    # 去掉 FK 后缀归一化查（hero_id → hero）
+    norm = COL_INDEX.get("_normalized", {}).get(col_name.lower(), [])
+    # 中文切词查（"英雄ID" → ["hero_base", ...]）
+    cn = COL_INDEX.get("_cn_segments", {})
+    cn_matches = []
+    for kw, tables in cn.items():
+        if kw in col_name:
+            cn_matches.extend(tables)
+    return list(dict.fromkeys(exact + norm + cn_matches))
 ```
 
-列值域格式说明：
-- PK 列：`键值(int)[1~1000,共17]` — 值域范围 + 总数
-- 枚举列（文本）：`品质(int)[普通,精英,传说]` — 文本枚举值
-- 枚举列（数值）：`类型(int)[1,2,3,4]` — 数值枚举值
-- FK 列：`技能ID(int)→skill.键值` — 不变，显示引用目标
-- 普通列：`name(str)` — 不变
+### 4.3 BFS 图扩展（扩充候选集）
 
-### column_index.json — 列名倒排索引
-
-```json
-{
-  "键值": ["hero", "skill", "buff", "weapon", ...],
-  "英雄ID": ["monsterTroop_monsterHero", ...],
-  "configEditor": ["ABtest", "Setting", "Switch", ...]
-}
+```python
+def bfs_expand(seed_tables: list[str], max_hops: int = 2,
+               min_confidence: float = 0.65) -> list[str]:
+    """从种子表出发，BFS 扩展直接相关表，返回所有候选表（含种子）。"""
+    visited = set(seed_tables)
+    frontier = list(seed_tables)
+    for _ in range(max_hops):
+        next_frontier = []
+        for tname in frontier:
+            node = REL_GRAPH.get("tables", {}).get(tname, {})
+            for nb in node.get("neighbors", []):
+                if nb["confidence"] >= min_confidence:
+                    t = nb["table"]
+                    if t not in visited:
+                        visited.add(t)
+                        next_frontier.append(t)
+        frontier = next_frontier
+    return list(visited)
 ```
 
-共 7235 个列名，每个映射到包含该列的表名列表。
+### 4.4 候选表排序与截断
 
-### cell_locator.json — 单元格定位
+```python
+def rank_and_prune(candidates: list[str], seeds: list[str],
+                   query: str, top_k: int = 8) -> list[str]:
+    """对候选表打分排序，返回 top-K。"""
+    query_lower = query.lower()
+    seed_set = set(seeds)
+    seed_modules = {TABLE_MODULE.get(s) for s in seeds} - {None}
 
-```json
-{
-  "tables": {
-    "hero": {
-      "file": "hero.xlsx",
-      "sheet": "hero",
-      "data_start_row": 2,
-      "row_count": 17,
-      "columns": {
-        "键值":           {"excel_col": "A", "col_idx": 0},
-        "英雄名字":       {"excel_col": "C", "col_idx": 2},
-        "英雄主动技能ID": {"excel_col": "P", "col_idx": 15}
-      },
-      "pk_column": "键值",
-      "pk_excel_col": "A",
-      "pk_to_excel_row": {
-        "1": 2, "2": 3, "3": 4, "5": 6, "1000": 19
-      }
-    }
-  }
-}
+    scored = []
+    for name in candidates:
+        score = 0.0
+        node = REL_GRAPH.get("tables", {}).get(name, {})
+
+        # 基础分：种子表最高
+        if name in seed_set:
+            score += 10.0
+        # 与种子的关系置信度
+        for nb in node.get("neighbors", []):
+            if nb["table"] in seed_set:
+                score += nb["confidence"] * 3.0
+        # centrality 加权（枢纽表更可能被需要）
+        score += CENTRALITY.get(name, 0) / 100.0 * 2.0
+        # 同模块加分
+        if TABLE_MODULE.get(name) in seed_modules:
+            score += 1.0
+        # 关键词命中
+        if query_lower and any(
+            p in query_lower for p in [name.lower()] +
+            name.lower().split("_")
+        ):
+            score += 2.0
+        scored.append((score, name))
+
+    scored.sort(key=lambda x: -x[0])
+    return [n for _, n in scored[:top_k]]
 ```
 
-`pk_to_excel_row` 仅对行数 ≤200 且主键唯一的表提供（261/1559 张）。
+### 4.5 完整表级召回流程
 
-### schema_summary.txt — 表名总览
-
+```python
+def recall_tables(query: str, top_k: int = 8) -> list[str]:
+    seeds = find_seed_tables(query)                          # LLM 意图提取
+    seeds += tables_by_column(query)                        # 列名精确定位补充
+    candidates = bfs_expand(seeds, max_hops=2)              # BFS 图扩展
+    return rank_and_prune(candidates, seeds, query, top_k)  # 排序截断
 ```
-# Schema Summary — 1559 tables, 32334 relations
 
-可用配置表（按业务域分组）：
-[alliance] Alliance_AllianceSetting, AllianceTech, AllianceShop, ...
-[battle] army, battleAttribute, combatStrength, BattlePass, ...
-[hero] hero, hero_hero_star, hero_hero_level, ...
-[item] item, equip, shop_shop_item, resource, ...
-[skill] skill, buff, buff_attribute, instanceSkill, ...
-[monster] monsterTroop, worldMonster, instanceMonster, ...
+---
+
+## 5. 层2 — 列级裁剪层
+
+`table_profiles.jsonl` 中每列新增三个语义字段：
+
+### 5.1 字段说明
+
+| 字段 | 取值示例 | 含义 |
+|:--|:--|:--|
+| `semantic_type` | `identifier` `metric` `flag` `enum` `pack_array` `temporal` `descriptor` `coordinate` `text` | 列的语义类型 |
+| `domain_role` | `id_key` `stat_atk` `stat_hp` `cost` `level_grade` `flag_switch` `type_category` `probability` `count_limit` 等 | 列的业务角色（17 种） |
+| `metric_tag` | `hp` `attack` `defense` `speed` `cost` `level` `exp` `count` `rate` `resource` 等 | 仅数值列，可聚合的游戏指标语义 |
+
+### 5.2 手动裁剪示例
+
+```python
+import json
+
+# 加载 profiles
+PROFILES: dict[str, dict] = {}
+with open(DATA / "table_profiles.jsonl", encoding="utf-8") as f:
+    for line in f:
+        obj = json.loads(line)
+        PROFILES[obj["table_name"]] = obj
+
+def prune_columns(table_name: str, query: str,
+                  max_cols: int = 25) -> list[dict]:
+    """
+    按 query 语义保留最相关的列，其余裁剪掉。
+    EvidenceAssembler 内部会自动做这一步，此函数仅供单独使用。
+    """
+    profile = PROFILES.get(table_name, {})
+    cols = profile.get("columns", [])
+    query_lower = query.lower()
+
+    scored = []
+    for c in cols:
+        score = 0
+        if c.get("is_pk"):            score += 100
+        if c.get("is_fk"):            score += 50
+        sem = c.get("semantic_type", "")
+        if sem in ("identifier", "flag", "enum"):  score += 30
+        role = c.get("domain_role", "") or ""
+        tag  = c.get("metric_tag",  "") or ""
+        name = c.get("name", "").lower()
+        # query 词义命中
+        for kw in (name, role.replace("_", " "), tag):
+            if kw and any(t in query_lower for t in kw.split()):
+                score += 15
+        if sem == "metric":           score += 10
+        if sem == "descriptor":       score += 5
+        scored.append((score, c))
+
+    scored.sort(key=lambda x: -x[0])
+    return [c for _, c in scored[:max_cols]]
+```
+
+### 5.3 按 semantic_type 过滤列
+
+```python
+# 只看数值指标列（用于统计分析类查询）
+def get_metric_cols(table_name: str) -> list[dict]:
+    profile = PROFILES.get(table_name, {})
+    return [c for c in profile.get("columns", [])
+            if c.get("semantic_type") == "metric"]
+
+# 只看枚举列（用于过滤条件生成）
+def get_enum_cols(table_name: str) -> dict[str, list]:
+    profile = PROFILES.get(table_name, {})
+    return {c["name"]: c.get("enum_values", [])
+            for c in profile.get("columns", [])
+            if c.get("is_enum") and c.get("enum_values")}
+```
+
+---
+
+## 6. 层3 — 行级取数层
+
+`RowRetriever` 从自然语言 query 提取谓词，回源读 Excel，只返回命中行块。
+
+### 6.1 基本用法
+
+```python
+from indexer.retrieval.row_retriever import RowRetriever
+
+retriever = RowRetriever(data_root="path/to/excel/data")
+
+# 从 query + table profile 推导谓词
+profile = PROFILES["hero_base"]
+predicates = retriever.generate_predicates(
+    query="攻击力大于500的英雄",
+    table_schema=profile,
+    max_predicates=6,
+)
+# 结果示例：
+# [Predicate(column='atk', op='gt', value=500.0, source='comparison_expr')]
+
+# 回源取行
+block = retriever.fetch_rows(
+    table_schema=profile,
+    predicates=predicates,
+    max_rows=20,
+    return_cols=["id", "name", "atk", "hp", "quality"],   # 可选，配合列级裁剪
+)
+print(f"命中 {block.total_matched} 行，返回 {len(block.rows)} 行")
+print(f"使用谓词: {block.predicates_used}")
+print(f"跳过谓词（列不存在）: {block.predicates_skipped}")
+# block.rows → [{"id": "1001", "name": "Arthur", "atk": "850", ...}, ...]
+```
+
+### 6.2 谓词生成策略与组合规则
+
+`generate_predicates` 按以下优先级生成：
+
+| 优先级 | 策略 | 示例 |
+|:--|:--|:--|
+| 1 | **ID 精确匹配** | query 含裸整数 → PK/FK 列 `eq` 谓词 |
+| 2 | **枚举命中** | query 含枚举值字面量 → `eq` 谓词 |
+| 3 | **数值范围** | `>=`/`大于`/`N到M` → `gte`/`lte`/`gt`/`lt` 谓词 |
+| 4 | **关键词搜索** | 中文/英文词 → 文本列 `contains` 谓词 |
+
+`fetch_rows` 的组合规则：
+
+- 同列多个 `eq` / `contains` / `in`：使用 **OR**
+- 同列多个范围条件（`gt/gte/lt/lte/ne`）：使用 **AND**
+- 不同列之间：使用 **AND**
+
+这意味着当前实现是“同列宽松、跨列收敛”的过滤策略，更适合分析场景；不是旧版那种“全局 OR 扩散式采样”。
+
+### 6.3 谓词操作符一览
+
+| op | 语义 | 示例 |
+|:--|:--|:--|
+| `eq` | 等于 | `quality eq 5` |
+| `ne` | 不等于 | `is_enable ne 0` |
+| `gt` `gte` | 大于/大于等于 | `atk gt 500` |
+| `lt` `lte` | 小于/小于等于 | `cd lte 10` |
+| `contains` | 字符串包含 | `name contains '骑士'` |
+| `in` | 集合包含 | `camp in [1,2,3]` |
+
+### 6.4 手动构建谓词
+
+```python
+from indexer.retrieval.row_retriever import Predicate
+
+manual_preds = [
+    Predicate("quality", "eq",  5,   "manual"),
+    Predicate("atk",     "gte", 800, "manual"),
+    Predicate("name",    "contains", "战士", "manual"),
+]
+block = retriever.fetch_rows(PROFILES["hero_base"], manual_preds, max_rows=50)
+```
+
+---
+
+## 7. 层4 — 证据组装层
+
+`EvidenceAssembler` 将前三层结果打包成四段式 LLM 上下文。
+
+### 7.1 初始化
+
+推荐从 `evidence_config.json` 读取配置：
+
+```python
+import json
+from indexer.export.evidence_assembler import EvidenceAssembler
+
+with open(DATA / "evidence_config.json", encoding="utf-8") as f:
+    cfg = json.load(f)
+
+assembler = EvidenceAssembler(**cfg["assembler_init"])
+# 等价于：
+# assembler = EvidenceAssembler(
+#     profiles_path="path/to/graph/table_profiles.jsonl",
+#     join_paths_path="path/to/graph/join_paths.json",
+#     data_root="path/to/excel/data",
+# )
+```
+
+### 7.2 组装证据
+
+```python
+evidence = assembler.assemble(
+    query="攻击力大于500且品质为5的英雄列表",
+    table_names=["hero_base", "hero_quality"],  # 层1 召回结果
+    max_rows_per_table=20,    # 每表最多返回行数
+    max_cols_per_table=25,    # 每表最多保留列数（列级裁剪）
+    fetch_rows=True,          # 是否执行行级取数（False 时跳过层3）
+    analysis_mode=None,       # 自动判断是否启用全量数值分析模式
+)
+```
+
+### 7.3 四段结构详解
+
+```python
+# 段①: schema — 列级裁剪后的表结构
+for tbl in evidence["schema"]:
+    print(f"{tbl['table']} [{tbl['domain']}] {tbl['row_count']}行")
+    print(f"  已选 {tbl['selected_columns']}/{tbl['total_columns']} 列")
+    for c in tbl["columns"]:
+        # 每列含: name, dtype, semantic_type, domain_role, metric_tag,
+        #         is_pk, is_fk, fk_target, is_enum, enum_values, stats
+        print(f"  - {c['name']}({c['dtype']}) "
+              f"sem={c.get('semantic_type')} "
+              f"role={c.get('domain_role')} "
+              f"tag={c.get('metric_tag')}")
+
+# 段②: join — 表间 JOIN 路径
+for j in evidence["join"]:
+    print(f"{j['from']} → {j['to']} ({j['hops']}跳, conf={j['min_confidence']})")
+    for jc in j["joins"]:
+        print(f"  {jc}")
+
+# 段③: key_rows — 谓词过滤行块
+for block in evidence["key_rows"]:
+    print(f"{block['table']}: 命中{block['total_matched']}行, "
+          f"返回{block['rows_returned']}行")
+    print(f"  谓词: {block['predicates_used']}")
+    for row in block["rows"][:3]:
+        print(f"  {row}")
+
+# 段④: stat_summary — 统计摘要
+for s in evidence["stat_summary"]:
+    if s["semantic_type"] == "metric":
+        print(f"{s['table']}.{s['column']} [{s.get('metric_tag')}] "
+              f"min={s['min']} max={s['max']} mean={s['mean']}")
+    else:
+        print(f"{s['table']}.{s['column']} 枚举: {s.get('enum_values')}")
+```
+
+### 7.4 格式化为 Prompt
+
+```python
+prompt_text = assembler.to_prompt_text(
+    evidence,
+    max_rows_display=10,   # Markdown 表格最多展示行数
+)
+
+# prompt_text 结构：
+# ## 用户问题
+# ...
+# ## 相关表结构（Schema）
+# ### hero_base [hero] 1500行  主键: id
+# > 英雄相关配置，含 id, name, quality, atk...
+# （已选 12/32 列）
+# - **id** `int` | PK, identifier, id_key
+# - **atk** `int` | metric, [attack], stat_atk, 范围[100~2000]
+# ...
+# ## 表间 JOIN 路径
+# - hero_base → skill_base (1跳, conf=0.92)
+#   `hero_base.skill_id = skill_base.id`
+# ## 关键数据行
+# ### hero_base（命中 47 行，展示 10 行）
+# 过滤条件: atk gt 500.0, quality eq 5
+# | id | name | atk | hp | quality |
+# |---|---|---|---|---|
+# | 1001 | 亚瑟 | 850 | 5200 | 5 |
+# ...
+# ## 统计摘要
+# - hero_base.atk [attack] min=100 max=2000 mean=650.3 unique=450
+
+messages = [
+    {"role": "system", "content": SCHEMA_SUMMARY + "\n\n" + ANSWER_RULES},
+    {"role": "user",   "content": prompt_text},
+]
+```
+
+### 7.5 数值分析模式（analysis_mode）— 游戏策划专用
+
+当 query 为**数值分析**（各档位平均、分布、离群值、平衡性、商业化风险、异常值）时，`analysis_mode=None` 会自动启用全量统计；也可以显式传 `True`：
+在 Python 侧做全量聚合，结果以紧凑表格给 LLM，**不丢数据、分析准确**。
+
+```python
+# 识别分析型 query（可按关键词或单独 LLM 调用判断）
+ANALYSIS_KEYWORDS = frozenset([
+    '平均', '分布', '各档次', '各等级', '各品质', '曲线', '离群', '异常',
+    '平衡', '数值分析', '统计', '多少', '占比', '区间'
+])
+def is_analysis_query(q: str) -> bool:
+    return any(kw in q for kw in ANALYSIS_KEYWORDS)
+
+evidence = assembler.assemble(
+    query=query,
+    table_names=table_names,
+    analysis_mode=None,  # 默认自动启用；如需强制可显式传 True
+)
+
+# analysis_mode 开启时：
+# - key_rows 为空，改为 analytical_result
+# - 每表：按枚举列分组 → count + 各数值列 mean/min/max/p50/p90
+# - 离群值：IQR 法检测，列出偏高/偏低的具体行（id + 值）
+# - to_prompt_text() 自动格式化为 "## 数值分析（全量统计，无采样）"
+```
+
+**输出示例**（紧凑，≈500–2000 tokens/表）：
+```
+## 表 hero_base 数值分析（全量 1500 行）
+### 按 quality 分组
+| quality | count | atk(mean/min/max) | hp(mean/min/max) |
+| 1 | 52 | 210.3/100/320 | 2100/800/3500 |
+| 2 | 118 | 380.2/250/510 | 4200/3200/5800 |
+| 3 | 245 | 550.1/400/950 | ...  ← 注意 max=950 可能离群
 ...
+### 离群值（IQR 法）
+- **atk 偏高**: [{"id": 1234, "atk": 950}, ...]
 ```
 
-### relation_graph.json — 邻接表（增强版）
+### 7.6 完整端到端示例
 
-每条邻居关系现在包含 `evidence` 字段（共享值证据）和 `evidence_desc` 字段（可读描述）：
+```python
+def answer_query(query: str) -> str:
+    table_names = recall_tables(query, top_k=6)
+    use_analysis = is_analysis_query(query)
 
-```json
-{
-  "tables": {
-    "hero": {
-      "domain": "hero",
-      "primary_key": "键值",
-      "neighbors": [
-        {
-          "table": "skill",
-          "direction": "outgoing",
-          "join": "hero.英雄主动技能ID = skill.键值",
-          "local_column": "英雄主动技能ID",
-          "remote_column": "键值",
-          "confidence": 0.77,
-          "relation_type": "fk_content_subset",
-          "method": "containment",
-          "evidence": {
-            "shared_values": ["101", "102", "103", "201", "202"],
-            "shared_count": 15,
-            "from_total": 17,
-            "to_total": 120
-          },
-          "evidence_desc": "shared(15): 101,102,103..."
-        }
-      ]
-    }
-  }
-}
+    evidence = assembler.assemble(
+        query=query,
+        table_names=table_names,
+        max_rows_per_table=20,
+        fetch_rows=not use_analysis,   # 分析模式不取行样本
+        analysis_mode=use_analysis,
+    )
+    prompt = assembler.to_prompt_text(evidence)
+
+    resp = openai.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": SCHEMA_SUMMARY},
+            {"role": "user",   "content": prompt},
+        ],
+        temperature=0,
+    )
+    return resp.choices[0].message.content
 ```
 
-`evidence` 字段说明：
-- `shared_values`：两列 sample_values 的交集样本（最多 5 个）
-- `shared_count`：交集总数
-- `from_total` / `to_total`：两端列的 sample_values 总数
-- 当无法计算时（某端列无 sample_values）`evidence` 字段不存在
+---
 
-### table_profiles.jsonl — 富元数据（增强版）
+## 8. pack_array 候选关系
 
-每条 profile 新增 `description` 字段（自动生成的中文描述），`searchable_text` 已包含缩写展开词：
+### 8.1 背景
 
-```json
-{
-  "table_name": "hero",
-  "domain": "hero",
-  "description": "英雄相关配置，主键 键值，含 键值, 英雄名字, 英雄品质, ... 等37列，小表(17行)，引用 skill, buff，被 hero_hero_star, monsterTroop_monsterHero 引用",
-  "file": "hero.xlsx",
-  "row_count": 17,
-  "primary_key": "键值",
-  "searchable_text": "hero hero hero 英雄 角色 人物 键值 英雄名字 ... attack hitpoint health ...",
-  "columns": [...],
-  "outgoing_relations": [...],
-  "incoming_relations": [...]
-}
-```
+pack_array 关系（如 `hero_base.skill_ids → skill_base.id`，值格式为 `"10001|10002|10003"`）已**从主关系图完全剥离**，不参与 BFS 扩展和 JOIN 路径。原因：纯值重叠检测假阳性率高，容易扩散干扰。
 
-`searchable_text` 增强说明：
-- 列名缩写自动展开：`atk` → 额外加入 `attack`，`hp` → 额外加入 `hitpoint health`
-- 基于 `GAME_ABBREVIATIONS` 词典，覆盖 90+ 个游戏常用缩写
+通过**业务关键词白名单**初筛（列名词段命中 `skill/buff/item/hero/monster/...` 等 47 个实体词）的候选关系会保存在 `pack_array_candidates.json`，供人工审核。
 
-### value_index.json — 跨表值反查索引
+### 8.2 候选文件格式
 
 ```json
 {
   "_meta": {
-    "total_values": 3200,
-    "min_tables": 2,
-    "description": "跨表共享值反查索引..."
+    "total": 38,
+    "source": "BuildResult.pack_array_candidates",
+    "description": "pack_array 弱信号候选关系，不在主关系图中..."
   },
-  "values": {
-    "101": [
-      {"table": "hero", "column": "英雄主动技能ID"},
-      {"table": "monsterSkill", "column": "技能ID"}
-    ],
-    "1001": [
-      {"table": "hero_hero_star", "column": "消耗道具ID"},
-      {"table": "shop_shop_item", "column": "商品ID"},
-      {"table": "reward_chest", "column": "物品ID"}
-    ]
-  }
-}
-```
-
-仅包含出现在 ≥2 张表中的值。数据来源：FK 候选列和枚举列的 sample_values（≤200 行采样）。
-
-### domain_graph.json — 域级关系图
-
-```json
-{
-  "domains": {
-    "hero": {
-      "cn_name": "英雄",
-      "table_count": 12,
-      "tables": ["hero", "hero_hero_star", "hero_hero_level", ...]
-    },
-    "skill": {
-      "cn_name": "技能",
-      "table_count": 8,
-      "tables": ["skill", "buff", "buff_attribute", ...]
-    }
-  },
-  "domain_relations": [
-    {"from": "hero", "to": "skill", "relation_count": 5, "avg_confidence": 0.85, "max_confidence": 0.92},
-    {"from": "hero", "to": "item",  "relation_count": 3, "avg_confidence": 0.78, "max_confidence": 0.88}
-  ]
-}
-```
-
-`domain_relations` 只包含跨域关系（同域内关系已排除），按 relation_count 降序排列。
-
-### enum_cross_ref.json — 枚举值交叉索引
-
-```json
-{
-  "cross_refs": [
+  "candidates": [
     {
-      "column_name": "品质",
-      "tables": ["hero", "item", "equip_base"],
-      "shared_values": ["普通", "精英", "传说", "史诗", "神话"],
-      "shared_count": 5,
-      "total_unique": 5,
-      "overlap_ratio": 1.0
-    },
-    {
-      "column_name": "阵营",
-      "tables": ["hero", "monsterTroop"],
-      "shared_values": ["1", "2", "3"],
-      "shared_count": 3,
-      "total_unique": 4,
-      "overlap_ratio": 0.75
+      "from_table": "hero_base",
+      "from_column": "skill_ids",
+      "to_table": "skill_base",
+      "to_column": "id",
+      "confidence": 0.75,
+      "evidence": "sep='|', overlap=45/47 (96%)",
+      "join": "hero_base.skill_ids = skill_base.id",
+      "pack_info": {
+        "separator": "|",
+        "element_dtype": "int",
+        "element_samples": [10001, 10002, 10015],
+        "avg_pack_size": 3.2
+      },
+      "promote_hint": "列名含 ['skill'] 等业务关键词，建议人工确认后通过 feedback 提升"
     }
   ]
 }
 ```
 
-找出跨表共享相同枚举空间的列。这些列代表相同的业务概念（如品质、阵营），但未被 FK 关系捕获。`overlap_ratio` = 交集/并集，≥0.5 才纳入。
+### 8.3 加载并作为扩展候选使用
 
-### analysis.json — 图算法分析
+```python
+with open(DATA / "pack_array_candidates.json", encoding="utf-8") as f:
+    pack_data = json.load(f)
+
+# 按 from_table 建索引
+PACK_CANDIDATES: dict[str, list[dict]] = {}
+for c in pack_data.get("candidates", []):
+    PACK_CANDIDATES.setdefault(c["from_table"], []).append(c)
+
+def expand_with_pack(table_names: list[str],
+                     min_confidence: float = 0.70) -> list[str]:
+    """在主图 BFS 扩展之后，补充 pack_array 候选关系覆盖的表。"""
+    extra = set()
+    for tname in table_names:
+        for cand in PACK_CANDIDATES.get(tname, []):
+            if cand["confidence"] >= min_confidence:
+                extra.add(cand["to_table"])
+    return list(extra - set(table_names))
+
+# 在 recall_tables() 之后可选追加：
+# pack_extras = expand_with_pack(table_names)
+# table_names = table_names + pack_extras[:3]
+```
+
+### 8.4 提升候选为正式关系（人工审核后）
+
+编辑 `relation_feedback.json`（与 `graph/` 同目录），添加确认条目：
 
 ```json
 {
-  "centrality": {"item": 92.1, "hero": 85.3, "skill": 71.8, ...},
-  "modules": [["hero", "hero_hero_star", "hero_skill", ...], ["item", "equip", ...], ...],
-  "orphans": ["unused_config", "old_test_table", ...],
-  "cycles": [["A", "B", "C"], ...],
-  "critical_path": ["hero", "skill", "buff", "buff_attribute"]
+  "confirmed": [
+    {
+      "from_table": "hero_base",
+      "from_column": "skill_ids",
+      "to_table": "skill_base",
+      "to_column": "id"
+    }
+  ],
+  "rejected": []
 }
 ```
 
-- `centrality`：PageRank 中心性 0-100，越高越是枢纽表
-- `modules`：Label Propagation 社区聚类，同数组内的表属同一业务模块
-- `orphans`：无任何关联的孤立表
-- `cycles`：循环依赖
-- `critical_path`：最长依赖链
+下次 `build_full_graph` 时，`FeedbackManager` 会自动提升该关系的置信度并纳入主图。
 
 ---
 
-## 五、性能基准
+## 9. 调优与进阶
 
-### 一次查询各阶段耗时（实测）
+### 9.1 构建后回归与回退
 
-| 阶段 | 耗时 | 说明 |
-|:--|:--|:--|
-| 向量检索 (1559 docs) | 5-20 ms | 本地 FAISS/Chroma |
-| 列名匹配 (7235 cols) | ~2 ms | 内存 dict 遍历 |
-| 图扩展 (1-hop) | ~0.05 ms | 预构建索引 |
-| 组装 Context | ~3 ms | 15 张表拼接 |
-| 单元格定位 | ~0.01 ms | dict 查找 |
-| **本地总计** | **~5 ms** | |
-| Embedding API | 50-200 ms | OpenAI / 本地模型 |
-| LLM 推理 | 1500-5000 ms | **95% 的时间在这** |
-| **端到端总计** | **~2-5 秒** | |
+系统现在内置了最小可用的构建后校验流程：
 
-### 启动加载耗时
+- 检查关键产物是否缺失
+- 对比上一成功版本的 `relation_count / join_path_count / orphan_count`
+- 执行 `graph/regression_queries.json` 中定义的默认回归样例
+- 生成 `regression_report.json` 和 `regression_report.md`
+- 若出现 `P0`，则**不切换** `graph/current/`
 
-| 文件 | 耗时 |
-|:--|:--|
-| schema_graph.json (~8 MB) | ~50 ms |
-| llm_chunks.jsonl (1.6 MB) | 8 ms |
-| column_index.json (1.0 MB) | 6 ms |
-| cell_locator.json (2.6 MB) | 19 ms |
-| 关系索引构建 | 6.5 ms |
-| **合计** | **~120 ms** |
+接入方建议：
 
-### 图谱构建耗时
+- 在线服务只读 `graph/current/`
+- 若线上结果异常，可快速对比 `graph/latest_success/`
+- 运维侧可读取 `graph/reports/<build_id>.json` 做自动化监控
 
-| 模式 | 耗时 | 说明 |
-|:--|:--|:--|
-| 全量构建 (1559 表) | ~60-120s | 首次构建或强制全量 |
-| 增量构建 (1 表变更) | ~3-10s | 只重新发现涉及变更表的关系 |
-| 增量构建 (无变更) | <1s | 跳过关系发现，直接返回 |
+默认回归样例覆盖：
 
----
+- 英雄平衡 / 技能链路
+- 礼包和商店商业化风险
+- 奖励 / 掉落链路
+- 登录奖励 / 邮件增益风险 / 引用链
 
-## 六、关键参数调优
+如需增加业务样例，直接编辑 `graph/regression_queries.json`
 
-| 参数 | 推荐值 | 说明 |
-|:--|:--|:--|
-| 向量召回 `top_k` | 10 | 1559 张表，适当放宽 |
-| 列名匹配关键词长度 | 2-4 字 | 太短噪声多，太长漏召 |
-| 图扩展 `min_confidence` | 0.7 | 只用高置信度关系 |
-| 图扩展 `max_total` | 15 | 控制 context 在 20K tokens 内 |
-| Context 中 confidence 展示 | ≥0.8 直述，0.6-0.8 标注"可能" | 给 LLM 判断参考 |
+### 9.2 向量化索引策略
 
----
-
-## 七、128K 上下文优化方案
-
-如果你的 LLM 支持 128K context，可以采用分层策略：
-
-```
-┌──────────── 128K Context Window ────────────┐
-│                                              │
-│  Layer 0 (常驻 ~15K tokens)                  │
-│  ├── System Prompt + 规则                    │
-│  └── schema_summary.txt（全量表名索引）       │
-│                                              │
-│  Layer 1 (动态 ~40-60K tokens)               │
-│  ├── 核心表的 llm_chunks（详细摘要）          │
-│  ├── sample_values（关键列的采样值）          │
-│  └── JOIN 路径                               │
-│                                              │
-│  Layer 2 (预留 ~40K tokens)                  │
-│  └── 多轮对话历史                            │
-│                                              │
-└──────────────────────────────────────────────┘
-```
-
-开启 **Prefix Caching** 后，Layer 0 的 ~15K tokens 只在首次请求时计算，后续请求自动复用缓存，可降低 30-50% 延迟和费用。
-
----
-
-## 八、LLM 自动调用示例（Tool Use / Function Calling）
-
-如果你的 RAG 系统支持 Tool Use，可以将上述接口注册为 LLM 可调用的工具：
+**方案 A：用 `table_profiles.jsonl` 的 `searchable_text`（推荐）**
 
 ```python
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search_game_tables",
-            "description": "搜索游戏配置表。输入关键词，返回相关表的结构、列信息和表间关系。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "搜索关键词，如'英雄技能'、'商店价格'、'联盟科技'"
-                    },
-                    "top_k": {
-                        "type": "integer",
-                        "description": "返回的最大表数量",
-                        "default": 10
-                    }
-                },
-                "required": ["query"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_table_detail",
-            "description": "获取指定表的完整结构信息，包括所有列、数据类型、采样值、关联关系。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "table_name": {
-                        "type": "string",
-                        "description": "表名，如 'hero'、'skill'、'item'"
-                    }
-                },
-                "required": ["table_name"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "locate_excel_cell",
-            "description": "定位配置数据在 Excel 文件中的具体位置（文件、sheet、单元格地址）。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "table_name": {"type": "string", "description": "表名"},
-                    "pk_value": {"type": "string", "description": "主键值"},
-                    "column_name": {"type": "string", "description": "列名"}
-                },
-                "required": ["table_name", "pk_value", "column_name"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "find_join_path",
-            "description": "查找两张表之间的关联路径（经过哪些中间表、用哪些列 JOIN）。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "from_table": {"type": "string", "description": "起始表名"},
-                    "to_table": {"type": "string", "description": "目标表名"}
-                },
-                "required": ["from_table", "to_table"]
-            }
-        }
-    }
-]
-```
-
-### Tool 实现
-
-```python
-def handle_tool_call(tool_name: str, args: dict) -> str:
-    """处理 LLM 发起的 tool call，返回 JSON 字符串结果。"""
-
-    if tool_name == "search_game_tables":
-        query = args["query"]
-        top_k = args.get("top_k", 10)
-        seed = recall_tables(query, vector_db, top_k=top_k)
-        tables = expand_tables(seed, max_total=top_k)
-        context = build_context(tables, include_joins=True)
-        return json.dumps({
-            "tables_found": len(tables),
-            "table_names": tables,
-            "detail": context
-        }, ensure_ascii=False)
-
-    elif tool_name == "get_table_detail":
-        name = args["table_name"]
-        table = GRAPH["tables"].get(name)
-        if not table:
-            return json.dumps({"error": f"表 '{name}' 不存在"})
-        # 返回完整结构
-        result = {
-            "name": name,
-            "file": table["file_path"],
-            "sheet": table["sheet_name"],
-            "row_count": table["row_count"],
-            "primary_key": table["primary_key"],
-            "domain": table.get("domain_label", "other"),
-            "columns": [
-                {
-                    "name": c["name"],
-                    "dtype": c.get("dtype", "?"),
-                    "sample_values": c.get("sample_values", [])[:10],
-                    "unique_count": c.get("unique_count", 0),
-                }
-                for c in table["columns"]
-            ],
-            "outgoing": [
-                f"{r['from_column']} → {r['to_table']}.{r['to_column']} "
-                f"(@{r['confidence']:.2f})"
-                for r in REL_FROM.get(name, [])
-                if r["confidence"] >= 0.6
-            ][:20],
-            "incoming": [
-                f"{r['from_table']}.{r['from_column']} → {r['to_column']} "
-                f"(@{r['confidence']:.2f})"
-                for r in REL_TO.get(name, [])
-                if r["confidence"] >= 0.6
-            ][:20],
-        }
-        return json.dumps(result, ensure_ascii=False)
-
-    elif tool_name == "locate_excel_cell":
-        result = locate_cell(
-            args["table_name"], args["pk_value"], args["column_name"]
-        )
-        return json.dumps(result or {"error": "无法定位"}, ensure_ascii=False)
-
-    elif tool_name == "find_join_path":
-        ft, tt = args["from_table"], args["to_table"]
-        # 实时 BFS 查找最短路径（≤3 跳，join_paths.json 仅预计算 1 跳）
-        path = _bfs_join_path(ft, tt, max_hops=3)
-        return json.dumps(path or {"error": f"未找到 {ft} → {tt} 的路径"},
-                          ensure_ascii=False)
-
-    return json.dumps({"error": f"未知工具: {tool_name}"})
-
-
-def _bfs_join_path(src: str, dst: str, max_hops: int = 3) -> dict | None:
-    """BFS 查找两表间最短 JOIN 路径"""
-    from collections import deque
-    if src not in GRAPH["tables"] or dst not in GRAPH["tables"]:
-        return None
-    queue = deque([(src, [src], [], 1.0)])
-    visited = {src}
-    while queue:
-        node, path, joins, min_conf = queue.popleft()
-        if node == dst:
-            return {
-                "from": src, "to": dst,
-                "hops": len(path) - 1,
-                "path": path,
-                "joins": joins,
-                "min_confidence": round(min_conf, 3)
-            }
-        if len(path) - 1 >= max_hops:
-            continue
-        for rel in REL_FROM.get(node, []) + REL_TO.get(node, []):
-            neighbor = (rel["to_table"] if rel["from_table"] == node
-                        else rel["from_table"])
-            if neighbor not in visited and rel["confidence"] >= 0.6:
-                visited.add(neighbor)
-                join_str = (f"{rel['from_table']}.{rel['from_column']} = "
-                            f"{rel['to_table']}.{rel['to_column']}")
-                queue.append((
-                    neighbor,
-                    path + [neighbor],
-                    joins + [join_str],
-                    min(min_conf, rel["confidence"])
-                ))
-    return None
-```
-
----
-
-## 九、完整接入示例
-
-```python
-"""
-完整示例：接入 OpenAI GPT-4o + ChromaDB
-"""
-import json
-from openai import OpenAI
-
-# ── 初始化 ──
-# 1. 加载图谱数据（见 Step 1）
-# 2. 初始化向量库（见 Step 2）
-# 3. 初始化 LLM
-client = OpenAI()
-
-def llm_with_tools(user_query: str) -> str:
-    """支持 tool use 的多轮调用"""
-    messages = [
-        {"role": "system", "content": f"""你是游戏配置数值分析助手。
-你可以通过工具查询游戏配置表的结构和关联关系。
-可用配置表总览：
-{SCHEMA_SUMMARY}"""},
-        {"role": "user", "content": user_query}
-    ]
-
-    while True:
-        resp = client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
-            tools=TOOLS,
-            tool_choice="auto"
-        )
-        msg = resp.choices[0].message
-
-        # 无 tool call → 直接返回
-        if not msg.tool_calls:
-            return msg.content
-
-        # 执行 tool calls
-        messages.append(msg)
-        for tc in msg.tool_calls:
-            result = handle_tool_call(
-                tc.function.name,
-                json.loads(tc.function.arguments)
-            )
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "content": result
-            })
-
-# ── 使用 ──
-print(llm_with_tools("英雄的主动技能伤害在哪些表里配置？"))
-print(llm_with_tools("帮我定位5号英雄的技能ID在Excel哪个位置"))
-print(llm_with_tools("item表和reward表之间怎么关联？"))
-```
-
----
-
-## 十、数据更新（增量构建）
-
-### 构建模式
-
-```bash
-# 在 dist/ 目录下执行（配置从 configs/settings.yml 读取）
-
-# 首次 / 增量构建（推荐：Excel 修改后执行，秒级完成）
-indexer.exe --config configs\settings.yml --run-now
-
-# 可选：后台守护模式（监听文件变化 + 定时重建）
-indexer.exe --config configs\settings.yml --daemon --run-now --schedule daily:02:00
-
-# 通过 Windows 计划任务自动执行（推荐：由 install.bat 配置）
-# 详见 README.md
-```
-
-> `--run-now` 默认使用增量模式：加载已有图谱，只处理变更文件。
-
-### 增量构建原理
-
-增量构建通过以下机制实现秒级更新：
-
-```
-                     ┌─────────────────────────────────────────┐
- 磁盘文件变更         │  Scanner（mtime 对比）                   │
- ──────────────────> │  ├── 新文件 → new_tables                │
-                     │  ├── mtime 变化 → updated_tables        │
-                     │  ├── 文件消失 → deleted_tables           │
-                     │  └── 未变化 → unchanged（跳过读取）       │
-                     └───────────────┬─────────────────────────┘
-                                     │ affected_tables = new ∪ updated ∪ deleted
-                                     ▼
-                     ┌─────────────────────────────────────────┐
- 已有 32000+ 关系     │  Builder（精确增量）                      │
- ──────────────────> │  1. 只删除 affected_tables 涉及的关系     │
-                     │  2. 保留其余关系不动                       │
-                     │  3. 只重新发现涉及 affected_tables 的关系  │
-                     │  4. 融合 + 去重 + 导出                    │
-                     └─────────────────────────────────────────┘
-```
-
-**关键优化点：**
-
-| 阶段 | 全量 | 增量（1 表变更） |
-|:--|:--|:--|
-| 文件读取 | 1559 个 Excel | 仅 1 个变更文件 |
-| 关系清除 | 全部清空 | 只清除涉及变更表的 ~50 条 |
-| 关系发现 | 全部列对比较 | 只比较涉及变更表的列对 |
-| 保留关系 | 0 条 | ~31950 条直接保留 |
-
-### 支持的变更类型
-
-| 变更类型 | 检测方式 | 处理 |
-|:--|:--|:--|
-| **新增 Excel 文件** | 磁盘存在但图谱中无对应表 | 读取文件 → 提取 Schema → 发现与所有表的关系 |
-| **修改 Excel 文件** | 文件 mtime 变化（1 秒容差） | 重新读取 → 更新 Schema → 重新发现涉及该表的关系 |
-| **删除 Excel 文件** | 图谱中有但磁盘上已不存在 | 移除表 + 移除所有涉及该表的关系 |
-| **表结构变更** | 列增减、类型变更 | 记录 changelog → 重新发现涉及该表的关系 |
-
-### 变更日志
-
-每次构建会在 `schema_graph.json` 的 `changelog` 字段记录变更历史（保留最近 200 条）：
-
-```json
-{
-  "changelog": [
-    {
-      "timestamp": "2026-03-17T14:00:00",
-      "table_name": "hero",
-      "change_type": "added_columns",
-      "details": "新增列: 英雄觉醒等级, 觉醒技能ID"
-    },
-    {
-      "timestamp": "2026-03-17T14:00:00",
-      "table_name": "new_activity",
-      "change_type": "table_added",
-      "details": "新增表 (25 列, 100 行)"
-    }
-  ]
-}
-```
-
-变更类型包括：`table_added`、`table_removed`、`added_columns`、`removed_columns`、`type_changed`。
-
-### 外部 RAG 系统更新
-
-重建后 `graph/` 下的所有文件会自动更新（原子写入，不会出现半写文件）。外部 RAG 系统需要：
-
-1. **重新加载** `schema_graph.json`、`schema_summary.txt` 等文件
-2. **增量更新向量库**：对比新旧 `llm_chunks.jsonl`，只 upsert 变化的 chunk
-
-```python
-def incremental_update_vectors(vector_db, old_chunks: dict, new_chunks: dict):
-    """增量更新向量库：只处理变化的 chunk"""
-    # 删除已移除的表
-    removed = set(old_chunks.keys()) - set(new_chunks.keys())
-    if removed:
-        vector_db.delete(ids=list(removed))
-
-    # 新增或变更的表
-    changed = {
-        k: v for k, v in new_chunks.items()
-        if k not in old_chunks or old_chunks[k] != v
-    }
-    if changed:
-        vector_db.upsert(
-            ids=list(changed.keys()),
-            documents=list(changed.values())
-        )
-
-    return len(removed), len(changed)
-```
-
----
-
-## 十一、RAG 侧优化建议
-
-> 以下优化方案利用 graph-builder 已导出的数据，在 RAG 查询侧实现。
-> graph-builder 只负责提供数据，下面这些逻辑由 RAG 系统自行实现。
-
-### 1. 预构建邻接索引（避免查询时 O(R) 全量扫描）
-
-`schema_graph.json` 的 `relations` 数组有数万条。每次查询遍历全量关系非常慢，建议启动时一次性预构建双向邻接索引：
-
-```python
-from collections import defaultdict
-
-ADJ_OUT: dict[str, list] = defaultdict(list)   # table → [(neighbor, rel_dict)]
-ADJ_IN:  dict[str, list] = defaultdict(list)   # table → [(neighbor, rel_dict)]
-for rel in GRAPH["relations"]:
-    ADJ_OUT[rel["from_table"]].append((rel["to_table"], rel))
-    ADJ_IN[rel["to_table"]].append((rel["from_table"], rel))
-```
-
-之后图扩展和上下文组装都用 `ADJ_OUT.get(table)` / `ADJ_IN.get(table)` 查邻居，O(邻居数) 而非 O(全部关系)。
-
-### 2. 利用 `_cn_segments` 和 `_normalized` 提高种子表定位准确率
-
-`column_index.json` 包含两个增强子索引：
-
-```python
-with open(DATA / "column_index.json", encoding="utf-8") as f:
-    _col_raw = json.load(f)
-    if "column_to_tables" in _col_raw:
-        _col_raw = _col_raw["column_to_tables"]
-COL_IDX = {k: v for k, v in _col_raw.items() if not k.startswith("_")}
-CN_SEGMENTS = _col_raw.get("_cn_segments", {})   # 中文实体词 → 表名
-NORMALIZED  = _col_raw.get("_normalized", {})     # 归一化列名 → 表名
-```
-
-种子表定位时可增加两个策略：
-
-```python
-# 策略 A：中文实体词精确定位
-# 构建时已对所有列名做中文切词，如"英雄主动技能ID"→切出"技能"
-if entity in CN_SEGMENTS:
-    seeds.update(CN_SEGMENTS[entity])
-
-# 策略 B：归一化列名匹配（去掉 _id/_key 等 FK 后缀）
-# 如 entity="hero"，NORMALIZED["hero"] 包含所有有 hero_id 列的表
-prefix = entity.lower()
-for suffix in ('_id', '_key', '_code', '_no'):
-    prefix = prefix.removesuffix(suffix)
-if prefix in NORMALIZED:
-    seeds.update(NORMALIZED[prefix])
-```
-
-### 3. Centrality 加权排序（枢纽表优先）
-
-`analysis.json` 的 centrality 字段包含每张表的 PageRank 中心性分数（0-100）。在 `rank_and_prune()` 排序中给枢纽表加分，避免边缘无关表挤占 context 窗口：
-
-```python
-CENTRALITY = {}
-_analysis_path = DATA / "analysis.json"
-if _analysis_path.exists():
-    with open(_analysis_path, encoding="utf-8") as f:
-        _analysis = json.load(f)
-    CENTRALITY = _analysis.get("centrality", {})
-    MODULES = _analysis.get("modules", [])
-
-# rank_and_prune() 中新增：
-score += CENTRALITY.get(name, 0) / 100.0 * 1.5   # 枢纽表最多 +1.5 分
-if GRAPH["tables"].get(name, {}).get("row_count", 0) <= 200:
-    score += 0.5  # 小表 sample_values 更完整，LLM 回答更准
-```
-
-### 4. 同模块表优先召回
-
-`analysis.json` 的 modules 字段包含 Label Propagation 社区聚类结果。种子表的同模块邻居应优先召回：
-
-```python
-# 预构建 table → module_id 映射
-TABLE_MODULE = {}
-for idx, mod in enumerate(MODULES):
-    for t in mod:
-        TABLE_MODULE[t] = idx
-
-# rank_and_prune() 中，如果候选表和任一种子表同模块，加分
-seed_modules = {TABLE_MODULE.get(s) for s in seed_tables} - {None}
-if TABLE_MODULE.get(name) in seed_modules:
-    score += 1.0  # 同业务模块加分
-```
-
-### 5. 向量化优先用 `searchable_text`
-
-`table_profiles.jsonl` 每条记录的 `searchable_text` 字段专为语义匹配设计，包含：
-- 表名、域名、中文同义词（"英雄"、"角色"、"人物"）
-- 所有列名
-- 文本类枚举值（"普通"、"精英"、"传说"）
-- 关联表名
-
-相比 `llm_chunks.jsonl` 的结构化 Markdown 摘要，`searchable_text` 没有格式噪声（`##`、`→`、`@0.95` 等标记），向量空间中语义距离更准。建议向量化入库时优先使用：
-
-```python
+# searchable_text 专为语义匹配设计，无格式噪声（无 ## / → / @conf 等标记）
+# 包含：表名、域名、中文同义词、列名、文本枚举值、关联表名
+ids, texts = [], []
 with open(DATA / "table_profiles.jsonl", encoding="utf-8") as f:
     for line in f:
         obj = json.loads(line)
@@ -1239,59 +740,237 @@ with open(DATA / "table_profiles.jsonl", encoding="utf-8") as f:
 collection.upsert(ids=ids, documents=texts)
 ```
 
-### 6. Prefix Caching（降低 LLM 延迟和成本）
-
-`schema_summary.txt`（~42KB, ~15K tokens）和回答规则作为 system prompt 的固定前缀，每次查询都不变。如果使用支持 prefix caching 的 LLM（如 GPT-4o、Claude），可以将 prompt 分层：
+**方案 B：用 `llm_chunks.jsonl`（多粒度，宽表有多条 chunk）**
 
 ```python
-def build_system_prompt(context: str) -> str:
-    # 固定前缀（可被缓存，首次之后不再计费/延迟）
-    prefix = f"{SCHEMA_SUMMARY}\n\n{ANSWER_RULES}\n\n"
-    # 动态后缀（每次查询不同）
-    suffix = f"## 当前查询相关的表结构\n\n{context}"
-    return prefix + suffix
+# v3 新字段：table_name / chunk_type / chunk_group
+# 宽表拆分为多个 chunk（chunk_type="table_group"，chunk_group=1/2/...）
+# 通过 table_name 字段可聚合同一张表的所有 chunk，无需解析 id 中的 __g 后缀
+
+ids, texts, metadatas = [], [], []
+with open(DATA / "llm_chunks.jsonl", encoding="utf-8") as f:
+    for line in f:
+        obj = json.loads(line)
+        ids.append(obj["id"])
+        texts.append(obj["text"])
+        metadatas.append({
+            "table_name":  obj["table_name"],
+            "chunk_type":  obj["chunk_type"],   # "table" | "table_group"
+            "chunk_group": obj["chunk_group"],  # null 或 int（列组序号）
+        })
+collection.upsert(ids=ids, documents=texts, metadatas=metadatas)
+
+# 向量召回后按 table_name 聚合（防止宽表多个 chunk 算多次）
+def vector_recall(query: str, top_k: int = 10) -> list[str]:
+    results = collection.query(query_texts=[query], n_results=top_k * 2)
+    seen, tables = set(), []
+    for meta in results["metadatas"][0]:
+        t = meta["table_name"]
+        if t not in seen:
+            seen.add(t)
+            tables.append(t)
+            if len(tables) >= top_k:
+                break
+    return tables
 ```
 
-效果：首次之后的请求延迟和费用降低 30-50%。
+### 9.3 centrality 加权召回
 
-### 7. entity→seeds 预缓存
-
-`find_seed_tables()` 每次查询都遍历全部表名做前缀匹配。如果实体词集合有限（游戏领域通常 30-50 个高频实体），可在启动时预构建缓存：
+`analysis.json` 的 `centrality` 是 PageRank 分数（0-100），越高代表被越多其他表引用。在排序阶段加权：
 
 ```python
-ENTITY_SEED_CACHE: dict[str, list[str]] = {}
-for entity, prefix in ENTITY_MAP.items():
-    tables = []
-    for name in GRAPH["tables"]:
-        if name == prefix or name.startswith(prefix + "_"):
-            tables.append(name)
-    for name, t in GRAPH["tables"].items():
-        if t.get("domain_label") == prefix and name not in tables:
-            tables.append(name)
-    ENTITY_SEED_CACHE[entity] = tables
-
-# 查询时 O(1)：
-seeds = ENTITY_SEED_CACHE.get(entity, [])
+# 枢纽表最多额外 +2 分
+score += CENTRALITY.get(name, 0) / 100.0 * 2.0
 ```
 
-### 8. 关于"规则引擎替代 LLM 意图提取"的建议
+### 9.4 同模块（社区）优先召回
 
-**不推荐**用纯规则引擎替代第一次 LLM 调用（意图提取 + 实体识别），原因：
+Label Propagation 社区聚类：同一模块内的表业务耦合度高，应优先召回：
 
-- LLM 能做隐式推理："升星要什么"→推断出 `hero_hero_star` + 道具表。规则引擎只能匹配到"升星"两字
-- LLM 理解口语化表达："氪金"→充值/商店、"变强"→hero+skill+equip 多域关联
-- Intent 判断需要上下文：同样的"品质"在不同语境下是 schema/value/impact
-- LLM 看着 `SCHEMA_SUMMARY` 的完整表名列表"点菜"，精确度远超关键词匹配
-- 成本极低：~780 tokens / 1-2s，省掉可能导致 20-30% 查询种子表错误
+```python
+# 预构建 table → module_id 映射
+TABLE_MODULE: dict[str, int] = {
+    t: i
+    for i, mod in enumerate(MODULES)
+    for t in mod
+}
 
-如需优化这一步延迟，建议换用更快的小模型（如 gpt-4o-mini）或缩减 prompt 体积，而非去掉 LLM。
+# 在排序时：种子表所在模块的候选表加分
+seed_modules = {TABLE_MODULE.get(s) for s in seeds} - {None}
+if TABLE_MODULE.get(name) in seed_modules:
+    score += 1.0
+```
 
-### 9. 关于"Intent-aware 图遍历方向"的建议
+### 9.5 join_paths 直接查 JOIN 条件
 
-**不推荐**根据 intent 限制 BFS 遍历方向（如 impact→只走入向），原因：
+```python
+with open(DATA / "join_paths.json", encoding="utf-8") as f:
+    JOIN_PATHS: dict = json.load(f)
 
-- FK 方向（from→to）代表"引用"，≠ 影响传播方向。如"改英雄品质影响什么"需要 hero→(入向)hero_star→(出向)item，只走入向第二跳就丢失 item
-- 启发式关系置信度分布模糊，0.6-0.7 区间有大量有效关系，提高 min_conf 阈值会误杀
-- BFS 深度仅 2 跳，砍掉一个方向等于只剩 1 跳有效覆盖
+def get_join_path(table_a: str, table_b: str) -> dict | None:
+    key = f"{table_a} -> {table_b}"
+    rev = f"{table_b} -> {table_a}"
+    return JOIN_PATHS["paths"].get(key) or JOIN_PATHS["paths"].get(rev)
 
-更好的做法：保持双向 BFS 不变，噪音交给排序阶段处理（距离衰减 + centrality 加权 + 实体命中 + 同模块加分）。
+jp = get_join_path("hero_base", "skill_base")
+# {"hops": 1, "path": ["hero_base", "skill_base"],
+#  "joins": ["hero_base.skill_id = skill_base.id"],
+#  "min_confidence": 0.92}
+```
+
+### 9.6 value_index 反查值所在表
+
+```python
+with open(DATA / "value_index.json", encoding="utf-8") as f:
+    VALUE_INDEX: dict = json.load(f)["values"]
+
+def find_value(v: str) -> list[dict]:
+    """查某个值（如 ID=1001）出现在哪些表的哪些列。"""
+    return VALUE_INDEX.get(str(v), [])
+
+# find_value("1001") → [{"table": "hero_base", "column": "id"}, ...]
+```
+
+### 9.7 domain_graph 快速判断跨域关系
+
+```python
+with open(DATA / "domain_graph.json", encoding="utf-8") as f:
+    DOMAIN_GRAPH: dict = json.load(f)
+
+# 查某个域下的所有表
+hero_tables = DOMAIN_GRAPH["domains"].get("hero", {}).get("tables", [])
+
+# 查两个域之间的关联强度
+for dr in DOMAIN_GRAPH["domain_relations"]:
+    if {dr["from"], dr["to"]} == {"hero", "skill"}:
+        print(f"hero↔skill: {dr['relation_count']}条关系, "
+              f"avg_conf={dr['avg_confidence']}")
+```
+
+### 9.8 Prefix Caching（降低延迟 30-50%）
+
+```python
+# system prompt 固定前缀（被 LLM API 缓存，首次之后不再计时）
+SYSTEM_PREFIX = f"{SCHEMA_SUMMARY}\n\n{ANSWER_RULES}\n\n"
+
+def build_prompt(evidence_text: str) -> list[dict]:
+    return [
+        {"role": "system", "content": SYSTEM_PREFIX + evidence_text},
+        # user message 为空或包含原始 query（已在 evidence_text 里）
+    ]
+```
+
+GPT-4o / Claude 支持 prefix caching：固定前缀首次之后费用和延迟大幅降低。
+
+### 9.9 fetch_rows=False（纯 schema 模式）
+
+当 query 是结构性问题（"hero_base 有哪些列"）而非数据查询时，跳过行级取数节省 I/O：
+
+```python
+evidence = assembler.assemble(
+    query="hero_base 表有哪些攻击类属性列",
+    table_names=["hero_base"],
+    fetch_rows=False,    # 只返回 schema + join + stat_summary，不读 Excel
+)
+```
+
+---
+
+## 10. 常见问题
+
+### Q1：召回了很多表，LLM 上下文装不下怎么办？
+
+优先级截断顺序：
+1. `rank_and_prune` 的 `top_k` 从 8 降到 5
+2. `max_cols_per_table` 从 25 降到 15（列级裁剪更激进）
+3. `max_rows_per_table` 从 20 降到 10
+4. `fetch_rows=False`（跳过行级取数，只给 schema + stat_summary）
+
+### Q2：表级召回时 LLM 返回了不存在的表名怎么办？
+
+```python
+seeds = [t for t in find_seed_tables(query)
+         if t in REL_GRAPH.get("tables", {})]
+```
+
+### Q3：llm_chunks.jsonl 里的 `id` 字段有 `__g2` 后缀，消费侧怎么聚合？
+
+v3 版本每条记录都有 `table_name` 字段，不需要解析 `id`：
+
+```python
+# 按 table_name 聚合同一张表的所有 chunk 文本
+from collections import defaultdict
+table_texts: dict[str, list[str]] = defaultdict(list)
+with open(DATA / "llm_chunks.jsonl", encoding="utf-8") as f:
+    for line in f:
+        obj = json.loads(line)
+        table_texts[obj["table_name"]].append(obj["text"])
+
+# 合并同表 chunk（宽表分组 chunk 拼起来）
+full_text = "\n".join(table_texts["hero_base"])
+```
+
+### Q4：pack_array 关系还能用吗？
+
+不直接进入主图的 BFS 扩展，但可以：
+1. 读 `pack_array_candidates.json`，作为**可选的扩展候选**（见 §8.3）
+2. 置信度 ≥ 0.70 的候选经人工确认后写入 `relation_feedback.json` → 下次构建自动纳入主图
+
+### Q5：`table_profiles.jsonl` 里列没有 `semantic_type` 字段怎么办？
+
+旧版图谱（构建于本次升级前）的列不含该字段。重新执行一次全量构建即可补全：
+
+```bash
+python -m indexer --run-now
+```
+
+### Q6：如何调高 pack_array 候选的召回精度？
+
+编辑 `indexer/discovery/pack_array.py` 中的 `_BUSINESS_COL_KEYWORDS` 集合，加入项目特有的实体词前缀（如 `army`、`troop`、`tech` 等）。
+
+### Q7：BFS 扩展产生了很多低相关表，怎么过滤？
+
+提高 `bfs_expand` 的 `min_confidence`（建议 0.70-0.75），或在 `rank_and_prune` 的 `top_k` 里设较小值（5-6）。噪声表通常 centrality 较低、与种子表置信度较低，排序后自然落到后面被截断。
+
+### Q8：数值分析不准确怎么办？
+
+优先用 `analysis_mode=None` 的默认自动判定；如需强制则传 `True`。该模式下在 Python 侧做全量 groupby/离群值检测，不依赖行采样，结果精确。适用于"各品质平均攻击力"、"有没有超模装备"、"各档位分布"等分析型 query。
+
+### Q8.1：应该读取哪个目录？
+
+始终优先读取 `graph/current/`。
+
+- `graph/builds/<build_id>/` 是单次构建的版本目录，可能尚未通过校验
+- `graph/latest_success/` 适合做人工回退和历史对账
+- 线上 RAG 不建议直接读 `builds/`
+
+### Q8.2：如果构建失败或告警怎么办？
+
+看这三个位置：
+
+- `graph/reports/<build_id>.md`：人读报表
+- `graph/reports/<build_id>.json`：机器读报表
+- `graph/alerts.log`：本地告警摘要
+
+如果报表状态是：
+
+- `P0`：当前版本不会切换，继续沿用上一版 `current`
+- `P1`：版本已生成但有明显退化，建议人工复核
+- `P2`：提示性异常，不一定影响在线使用
+
+### Q9：行级取数层（RowRetriever）找不到 Excel 文件怎么办？
+
+检查 `EvidenceAssembler` 初始化时的 `data_root` 是否指向正确的 Excel 根目录。`table_profiles.jsonl` 里每表的 `file` 字段是相对于 `data_root` 的文件名，RowRetriever 会在该目录下递归搜索：
+
+```python
+assembler = EvidenceAssembler(
+    profiles_path=str(DATA / "table_profiles.jsonl"),
+    join_paths_path=str(DATA / "join_paths.json"),
+    data_root="D:/work/A_elex/策划表/excel_data/excel",  # Excel 文件实际位置
+)
+```
+
+---
+
+*文档对应版本：游戏配置表证据系统 v4，四层召回架构 + 构建后回归/回退机制。*
+*如需重建图谱：`python -m indexer --run-now`*

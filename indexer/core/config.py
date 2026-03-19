@@ -4,7 +4,7 @@
 配置集中管理
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Dict
 
@@ -44,9 +44,11 @@ class BuildConfig:
 
     # 性能配置
     max_workers: int = 4
-    max_sample_rows: int = 2000
+    max_sample_rows: int = 2000        # 每列存储的最大唯一值数量（分层采样）
     max_sample_cols: int = 200
-    max_rows_per_table: int = 50000
+    # 每表最大读取行数：None = 读全量（推荐）；设置具体数字仅用于内存受限场景
+    # 修改前为 50000，会导致超过5万行的大表数据截断，FK发现和枚举识别失真
+    max_rows_per_table: Optional[int] = None
     skip_sheet_prefixes: tuple = ('#',)
 
     # Phase 1: 包含度检测

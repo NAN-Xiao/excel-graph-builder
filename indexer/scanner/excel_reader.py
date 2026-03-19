@@ -3,10 +3,10 @@
 """
 Excel 文件读取器
 
-支持大表分块读取，避免内存溢出。
-对万行百列级别的游戏配置表做两阶段读取：
-1. 头部采样（前 N 行）做类型推断
-2. 全列扫描做唯一值统计（分块）
+支持大表全量读取 + 分层采样，避免截断导致外键发现和枚举识别失真。
+对万行百列级别的游戏配置表做两阶段处理：
+1. 全量（或按 max_read_rows 上限）读取，获取真实行数和完整唯一值集合
+2. 分层采样（头部+中段+尾部均匀取点）控制存储的 sample_values 数量
 """
 
 import os
@@ -42,21 +42,42 @@ def _is_type_value(v: str) -> bool:
     return base in _TYPE_KEYWORDS
 
 
+def _stratified_sample(arr, n: int) -> list:
+    """从 arr 中均匀取 n 个元素（首、尾、中间均匀分布）。
+
+    保证取到数值范围的两端，避免只取头部值导致代表性不足。
+    """
+    total = len(arr)
+    if total <= n:
+        return list(arr)
+    if n == 1:
+        return [arr[0]]
+    step = (total - 1) / (n - 1)
+    indices = sorted({round(i * step) for i in range(n)})
+    return [arr[i] for i in indices]
+
+
 class ExcelReader:
-    """Excel/CSV 文件读取器（支持大表）"""
+    """Excel/CSV 文件读取器（支持大表全量读取 + 分层采样）"""
 
     EXCEL_EXTENSIONS = {'.xlsx', '.xls'}
     CSV_EXTENSIONS = {'.csv', '.tsv'}
     SUPPORTED_EXTENSIONS = EXCEL_EXTENSIONS | CSV_EXTENSIONS
 
-    def __init__(self, max_sample_rows: int = 200, chunk_size: int = 5000):
+    # 默认最大读取行数：None 表示不限制（读全量）
+    DEFAULT_MAX_READ_ROWS = None
+
+    def __init__(self, max_sample_rows: int = 200, chunk_size: int = 5000,
+                 max_read_rows: Optional[int] = None):
         """
         Args:
-            max_sample_rows: 每列采样的最大唯一值数量
-            chunk_size: 分块读取时每块行数
+            max_sample_rows: 每列存储的最大唯一值数量（用于 FK 发现和枚举识别）
+            chunk_size: 保留参数（未来分块流式读取扩展用）
+            max_read_rows: 读取行数上限（None = 不限制，读全部行）
         """
         self.max_sample_rows = max_sample_rows
         self.chunk_size = chunk_size
+        self.max_read_rows = max_read_rows  # None = 读全量
         self.logger = SimpleLogger()
 
     def read_file(self, file_path: str, sheet_name: str = None) -> List[Dict]:
@@ -81,41 +102,82 @@ class ExcelReader:
             self.logger.error(f"读取文件失败 {file_path.name}: {e}")
             return []
 
+    # c/s/cs 导出标记（服务端/客户端导出标记行）
+    _EXPORT_MARKERS = frozenset([
+        'c', 's', 'cs', 'sc', 'all', 'none',
+        'server', 'client', 'both', '0', '1',
+        'common', '服务端', '客户端', '全端', '全量',
+    ])
+
     def skip_header_rows(self, df: pd.DataFrame) -> pd.DataFrame:
         """检测并跳过游戏配置 Excel 的元数据表头行，返回干净的 DataFrame。"""
-        skip = self._detect_header_rows(df)
+        skip, _ = self._detect_header_rows(df)
         if skip > 0:
             df = df.iloc[skip:].reset_index(drop=True)
         return df
 
-    def _detect_header_rows(self, df: pd.DataFrame) -> int:
+    def detect_and_fix_header(self, df: pd.DataFrame) -> tuple:
+        """
+        检测元数据表头行并修复列名。
+
+        当 pandas 误将注释行/说明行读为表头时，此方法会找到真正的字段名行，
+        用其值覆盖错误的列名，然后返回跳过所有元数据行后的干净 DataFrame。
+
+        Returns:
+            (cleaned_df, header_offset)
+        """
+        skip, better_cols = self._detect_header_rows(df)
+
+        if skip > 0 and better_cols:
+            # 当前列名看起来不正常（含注释符/大量 Unnamed），用真正的字段名替换
+            bad_col_count = sum(
+                1 for c in df.columns
+                if (str(c).startswith('Unnamed:')
+                    or any(ch in str(c) for ch in ('//', '#', '@', '/*'))
+                    or len(str(c)) > 80)
+            )
+            if bad_col_count >= max(1, len(df.columns) * 0.3):
+                df = df.copy()
+                # 用检测到的标识符行值重命名列
+                for j, new_name in enumerate(better_cols):
+                    if j < len(df.columns):
+                        df.rename(columns={df.columns[j]: new_name}, inplace=True)
+
+        if skip > 0:
+            df = df.iloc[skip:].reset_index(drop=True)
+
+        return df, skip
+
+    def _detect_header_rows(self, df: pd.DataFrame) -> tuple:
         """
         检测游戏配置 Excel 的元数据表头行数。
 
         常见模式（不同游戏项目格式可能不同）:
-          A: [pandas_header=CN, ident_row, type_row, data...]
-          B: [pandas_header=EN, type_row, data...]
-          C: [pandas_header=CN, ident_row, desc_row, type_row, data...]
-          D: [pandas_header=CN, tag_row(c/s/cs), ident_row, type_row, data...]
-
-        策略: 逐行检测，支持类型行、标识符行、描述/注释行（需先检测到元数据）。
-        允许在已确认的元数据行之间存在纯文本描述行（间隔容忍）。
+          A: [pandas_header=CN字段名, type_row, data...]
+          B: [pandas_header=EN字段名, type_row, data...]
+          C: [pandas_header=注释行, ident_row, type_row, data...]    ← 列名修复场景
+          D: [pandas_header=CN字段名, c/s/cs标记行, type_row, data...]
+          E: [pandas_header=注释行, ident_row, desc_row, type_row, data...]
 
         Returns:
-            应跳过的行数（0 表示无需跳过）
+            (skip_count, identifier_row_values_or_None)
+            - skip_count: 应跳过的行数（0 表示无需跳过）
+            - identifier_row_values: 若检测到英文标识符行，返回其值列表（可用于修复列名）
         """
         skip = 0
-        check_rows = min(5, len(df))
+        better_cols = None  # 找到的"真正字段名行"的值列表
+        check_rows = min(6, len(df))
 
         for i in range(check_rows):
             row = df.iloc[i]
-            non_null = [str(v).strip().lower()
-                        for v in row if pd.notna(v) and str(v).strip()]
-            if not non_null:
+            raw_vals = [(j, str(v).strip()) for j, v in enumerate(row)
+                        if pd.notna(v) and str(v).strip()]
+            if not raw_vals:
                 if skip > 0:
                     skip = i + 1  # 元数据之间的空行一并跳过
                 continue
 
+            non_null = [v.lower() for _, v in raw_vals]
             total = len(non_null)
 
             # 判定1: 类型标记行（>70% 是类型关键词，支持 list<int> 等复合类型）
@@ -124,21 +186,54 @@ class ExcelReader:
                 skip = i + 1
                 continue
 
-            # 判定2: 英文标识符行（>80% 是 camelCase/snake_case 标识符）
+            # 判定2: 英文标识符行（>75% 是 camelCase/snake_case 标识符）
+            # 保存这行的值，用于可能的列名修复
             ident_hits = sum(
                 1 for v in non_null
-                if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', v) and len(v) >= 2
+                if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', v) and 2 <= len(v) <= 60
             )
-            if ident_hits / total > 0.8:
+            if ident_hits / total > 0.75:
+                skip = i + 1
+                # 保存原始大小写的值，作为潜在的列名
+                row_vals = [str(v).strip() for _, v in raw_vals]
+                # 补全到完整列数（处理末尾空单元格）
+                full_vals = []
+                raw_idx = 0
+                for j in range(len(df.columns)):
+                    if raw_idx < len(raw_vals) and raw_vals[raw_idx][0] == j:
+                        full_vals.append(raw_vals[raw_idx][1])
+                        raw_idx += 1
+                    else:
+                        full_vals.append(f"_col_{j}")
+                better_cols = full_vals
+                continue
+
+            # 判定3: c/s/cs 导出标记行（>70% 是导出作用域标记）
+            marker_hits = sum(1 for v in non_null if v in self._EXPORT_MARKERS)
+            if marker_hits / total > 0.7:
                 skip = i + 1
                 continue
 
-            # 判定3: 描述/注释行 — 仅在已检测到至少一行元数据时启用
+            # 判定4: 注释行 — 即使 skip=0 也识别
+            # 行内容几乎全是中文/文本，无数字，且首单元格含注释符或中文说明词
+            numeric_hits = sum(1 for v in non_null if re.match(r'^-?\d+\.?\d*$', v))
+            first_val = non_null[0] if non_null else ''
+            is_comment = (
+                numeric_hits / total < 0.05 and
+                (first_val.startswith('//') or
+                 first_val.startswith('#') or
+                 first_val.startswith('/*') or
+                 # 首单元格是纯中文说明（含"说明""注释""备注"等）
+                 any(kw in first_val for kw in
+                     ('说明', '注释', '备注', '注意', '描述', 'remark', 'note', 'desc')))
+            )
+            if is_comment:
+                skip = i + 1
+                continue
+
+            # 判定5: 描述/注释行 — 仅在已检测到至少一行元数据时启用
             # 纯文本行（几乎无数字）夹在元数据行之间，通常是中文字段说明
             if skip > 0:
-                numeric_hits = sum(
-                    1 for v in non_null if re.match(r'^-?\d+\.?\d*$', v)
-                )
                 if numeric_hits / total < 0.1:
                     skip = i + 1
                     continue
@@ -146,7 +241,7 @@ class ExcelReader:
             # 当前行既不是元数据也不是描述行 — 停止检查
             break
 
-        return skip
+        return skip, better_cols
 
     def _read_csv(self, file_path: Path) -> List[Dict]:
         """读取 CSV 文件"""
@@ -193,15 +288,22 @@ class ExcelReader:
             if any(sn.startswith(p) for p in ('#',)):
                 continue
             try:
-                # P4: 只读取前 max_rows 行，避免全量加载万行大表
-                max_rows = self.max_sample_rows * 25  # 默认 50000
-                df = xls.parse(sn, nrows=max_rows)
+                # 读全量行：nrows=None 表示不截断。
+                # 若配置了 max_read_rows，则只读取前 N 行（用于内存受限场景）。
+                # 注意：不再使用 max_sample_rows * 25 的隐式计算，两个参数职责分离。
+                df = xls.parse(sn, nrows=self.max_read_rows)
                 if df.empty or len(df.columns) == 0:
                     continue
 
                 # 跳过看起来不是数据表的 sheet（列数 < 2 或行数 < 1）
                 if len(df.columns) < 2 or len(df) < 1:
                     continue
+
+                if self.max_read_rows and len(df) >= self.max_read_rows:
+                    self.logger.warning(
+                        f"  {file_path.name}/{sn}: 已达读取上限 {self.max_read_rows} 行，"
+                        f"实际行数可能更多，建议调大 max_rows_per_table 配置"
+                    )
 
                 results.append({
                     'sheet_name': sn,
@@ -216,16 +318,22 @@ class ExcelReader:
 
     def collect_column_samples(self, df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
         """
-        对每列收集采样数据（唯一值、类型推断等），适配大表。
+        对每列收集采样数据（唯一值、类型推断、数值统计），适配大表。
+
+        改进点：
+        - unique_count / null_count 基于全量行计算，不受 sample_values 限制影响
+        - sample_values 使用分层采样（头+中+尾均匀取点），保证数值范围覆盖
+        - 数值列额外记录 stats: {min, max, mean}，供 FK 验证和数据分析使用
 
         Returns:
             {
                 'col_name': {
-                    'sample_values': [...],   # 去重后 top-K
+                    'sample_values': [...],   # 分层采样后 top-K 唯一值
                     'dtype': str,             # int/float/str/mixed
-                    'unique_count': int,
-                    'null_count': int,
-                    'total_count': int,
+                    'unique_count': int,      # 真实唯一值数量（全量统计）
+                    'null_count': int,        # 空值数量
+                    'total_count': int,       # 总行数
+                    'stats': {...},           # 仅数值列：{min, max, mean}
                 }
             }
         """
@@ -240,13 +348,14 @@ class ExcelReader:
             if len(non_null) == 0:
                 continue
 
-            # 基本统计
+            # 全量唯一值统计（不截断，保证 unique_count 准确）
             unique_vals = non_null.unique()
             unique_count = len(unique_vals)
 
-            # 采样：取前 max_sample_rows 个唯一值
+            # 分层采样：均匀取 max_sample_rows 个唯一值（首+中+尾覆盖全范围）
+            # 优于只取前 N 个——对大表 FK 和枚举发现更有代表性
             if unique_count > self.max_sample_rows:
-                sample_values = list(unique_vals[:self.max_sample_rows])
+                sample_values = _stratified_sample(unique_vals, self.max_sample_rows)
             else:
                 sample_values = list(unique_vals)
 
@@ -256,13 +365,28 @@ class ExcelReader:
             # 类型推断
             dtype = self._infer_dtype(col, non_null)
 
-            result[str(col_name)] = {
+            col_info: Dict[str, Any] = {
                 'sample_values': sample_values,
                 'dtype': dtype,
                 'unique_count': unique_count,
                 'null_count': int(col.isna().sum()),
                 'total_count': total_rows,
             }
+
+            # 数值列：补充 min/max/mean 统计，用于后续 FK 验证和数据分析
+            if dtype in ('int', 'float'):
+                try:
+                    numeric = pd.to_numeric(non_null, errors='coerce').dropna()
+                    if len(numeric) > 0:
+                        col_info['stats'] = {
+                            'min': self._to_native(numeric.min()),
+                            'max': self._to_native(numeric.max()),
+                            'mean': round(float(numeric.mean()), 4),
+                        }
+                except Exception:
+                    pass
+
+            result[str(col_name)] = col_info
 
         return result
 

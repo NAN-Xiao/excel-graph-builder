@@ -10,6 +10,7 @@ from .abbreviation import AbbreviationDiscovery
 from .transitive import TransitiveDiscovery
 from .feedback import FeedbackManager
 from .naming_convention import NamingConventionDiscovery
+from .pack_array import PackArrayDiscovery
 from .game_dictionary import (
     GAME_ABBREVIATIONS, DOMAIN_KEYWORDS,
     DOMAIN_CLASSIFICATION_RULES, DOMAIN_COLORS,
@@ -20,10 +21,11 @@ from .game_dictionary import (
 __all__ = [
     'RelationDiscoveryStrategy',
     'ContainmentDiscovery',
-    'AbbreviationDiscovery', 
+    'AbbreviationDiscovery',
     'TransitiveDiscovery',
     'FeedbackManager',
     'NamingConventionDiscovery',
+    'PackArrayDiscovery',
     'GAME_ABBREVIATIONS',
     'DOMAIN_KEYWORDS',
     'DOMAIN_CLASSIFICATION_RULES',

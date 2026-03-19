@@ -327,24 +327,45 @@ def export_table_profiles(graph: SchemaGraph,
         for col in table.columns:
             cn = col['name']
             is_fk = cn in fk_map
+            total = col.get('total_count', 0)
+            null_count = col.get('null_count', 0)
+
             col_info = {
                 "name": cn,
                 "dtype": col.get('dtype', '?'),
                 "is_pk": cn == pk,
                 "is_fk": is_fk,
+                "null_rate": round(null_count / total, 4) if total > 0 else 0.0,
+                "unique_count": col.get('unique_count', 0),
             }
             if is_fk:
                 col_info["fk_target"] = f"{fk_map[cn][0]}.{fk_map[cn][1]}"
+
+            # ── 列级语义标注（列级裁剪层）──
+            sem_type = col.get('semantic_type')
+            if sem_type:
+                col_info["semantic_type"] = sem_type
+            dom_role = col.get('domain_role')
+            if dom_role:
+                col_info["domain_role"] = dom_role
+            metric_tag = col.get('metric_tag')
+            if metric_tag:
+                col_info["metric_tag"] = metric_tag
+
+            # 数值统计（min/max/mean，来自全量行扫描）
+            col_stats = col.get('stats')
+            if col_stats:
+                col_info["stats"] = col_stats
 
             # 枚举值
             if cn in (table.enum_columns or {}):
                 col_info["is_enum"] = True
                 vals = table.enum_columns[cn]
-                col_info["enum_values"] = vals[:50]  # 限制大小
+                col_info["enum_values"] = vals[:50]
             else:
                 col_info["is_enum"] = False
 
-            # 样本值（profile 只需少量代表性值，控制文件体积）
+            # 样本值（少量代表性值，控制文件体积）
             sv = col.get('sample_values')
             if sv:
                 col_info["sample_values"] = sv[:8]
@@ -436,6 +457,7 @@ def export_table_profiles(graph: SchemaGraph,
             "sheet": table.sheet_name,
             "row_count": table.row_count,
             "primary_key": pk,
+            "header_offset": getattr(table, "header_offset", 0),
             "columns": columns,
             "outgoing_relations": out_rels,
             "incoming_relations": in_rels,
@@ -736,28 +758,53 @@ def _generate_table_description(name: str, table, domain: str,
 
 def _compute_shared_values(graph: SchemaGraph, rel: RelationEdge,
                            max_samples: int = 5) -> Dict:
-    """计算一条关系两端列的共享值样本。"""
+    """计算一条关系两端列的共享值样本。
+
+    pack_array 关系跳过（pack 列的 sample_values 是完整打包字符串，
+    与目标表 PK 值做集合操作无意义且可能触发 C 级别错误）。
+    """
+    # pack_array 关系不计算共享值：两端类型不兼容（完整包字符串 vs 单个整数）
+    if rel.discovery_method == 'pack_array':
+        return {}
+
     from_table = graph.tables.get(rel.from_table)
     to_table = graph.tables.get(rel.to_table)
     if not from_table or not to_table:
         return {}
 
+    def _safe_str_set(col_info) -> set:
+        """将列样本值转换为可哈希字符串集合，过滤无效值。"""
+        result = set()
+        for v in col_info.get('sample_values') or []:
+            try:
+                s = str(v)
+                # 过滤 pandas/numpy 特殊值
+                if s.lower() not in ('nan', 'none', 'na', '<na>', 'nat'):
+                    result.add(s)
+            except Exception:
+                pass
+        return result
+
     from_sv = set()
     for c in from_table.columns:
-        if c['name'] == rel.from_column and c.get('sample_values'):
-            from_sv = {str(v) for v in c['sample_values']}
+        if c['name'] == rel.from_column:
+            from_sv = _safe_str_set(c)
             break
 
     to_sv = set()
     for c in to_table.columns:
-        if c['name'] == rel.to_column and c.get('sample_values'):
-            to_sv = {str(v) for v in c['sample_values']}
+        if c['name'] == rel.to_column:
+            to_sv = _safe_str_set(c)
             break
 
     if not from_sv or not to_sv:
         return {}
 
-    shared = sorted(from_sv & to_sv)
+    try:
+        shared = sorted(from_sv & to_sv)
+    except Exception:
+        return {}
+
     if not shared:
         return {}
 
@@ -767,6 +814,343 @@ def _compute_shared_values(graph: SchemaGraph, rel: RelationEdge,
         "from_total": len(from_sv),
         "to_total": len(to_sv),
     }
+
+
+# ──────────────────────────────────────────────────────────
+# 8. data_health.json — 数据质量健康报告
+# ──────────────────────────────────────────────────────────
+
+def export_data_health(graph: SchemaGraph,
+                       output_path: Optional[str] = None,
+                       top_n: int = 20) -> dict:
+    """
+    导出数据质量健康报告，供 RAG 回答数据分析类问题。
+
+    包含：
+    - overview: 全局统计（表数、列数、总行数、有PK的表数、孤立表数）
+    - largest_tables: 行数最多的 top_n 张表
+    - widest_tables: 列数最多的 top_n 张表
+    - empty_tables: 行数为 0 的表
+    - no_pk_tables: 无法识别主键的表
+    - high_null_tables: 平均空值率最高的 top_n 张表
+    - high_null_columns: 空值率 > 50% 的列（按表分组）
+    - numeric_ranges: 各表数值列的 min/max/mean 汇总
+    - hub_tables: 被引用次数最多的 top_n 枢纽表（入向关系数）
+    - column_type_dist: 各 dtype 的列数分布
+    """
+    tables = graph.tables
+    relations = graph.relations
+
+    # ── 全局统计 ──
+    total_rows = sum(t.row_count for t in tables.values())
+    tables_with_pk = sum(1 for t in tables.values() if t.primary_key)
+
+    # 入向关系计数（被引用次数）
+    in_degree: Dict[str, int] = defaultdict(int)
+    out_degree: Dict[str, int] = defaultdict(int)
+    for rel in relations:
+        in_degree[rel.to_table] += 1
+        out_degree[rel.from_table] += 1
+
+    orphan_count = sum(
+        1 for name in tables
+        if in_degree[name] == 0 and out_degree[name] == 0
+    )
+
+    total_cols = sum(len(t.columns) for t in tables.values())
+
+    overview = {
+        "table_count": len(tables),
+        "total_columns": total_cols,
+        "total_rows": total_rows,
+        "tables_with_pk": tables_with_pk,
+        "tables_without_pk": len(tables) - tables_with_pk,
+        "orphan_tables": orphan_count,
+        "relation_count": len(relations),
+    }
+
+    # ── 最大表（行数） ──
+    largest_tables = sorted(
+        [{"table": n, "row_count": t.row_count, "col_count": len(t.columns),
+          "domain": t.domain_label or "other"}
+         for n, t in tables.items()],
+        key=lambda x: -x["row_count"]
+    )[:top_n]
+
+    # ── 最宽表（列数） ──
+    widest_tables = sorted(
+        [{"table": n, "col_count": len(t.columns), "row_count": t.row_count,
+          "domain": t.domain_label or "other"}
+         for n, t in tables.items()],
+        key=lambda x: -x["col_count"]
+    )[:top_n]
+
+    # ── 空表 ──
+    empty_tables = sorted(
+        [{"table": n, "file": Path(t.file_path).name}
+         for n, t in tables.items() if t.row_count == 0],
+        key=lambda x: x["table"]
+    )
+
+    # ── 无主键表 ──
+    no_pk_tables = sorted(
+        [{"table": n, "col_count": len(t.columns), "row_count": t.row_count}
+         for n, t in tables.items() if not t.primary_key],
+        key=lambda x: x["table"]
+    )
+
+    # ── 高空值率表 & 列 ──
+    high_null_tables = []
+    high_null_columns: List[dict] = []
+
+    for name, table in tables.items():
+        col_null_rates = []
+        for col in table.columns:
+            total = col.get('total_count', 0)
+            null_count = col.get('null_count', 0)
+            if total == 0:
+                continue
+            nr = null_count / total
+            col_null_rates.append(nr)
+            if nr > 0.5:
+                high_null_columns.append({
+                    "table": name,
+                    "column": col['name'],
+                    "null_rate": round(nr, 4),
+                    "null_count": null_count,
+                    "total_count": total,
+                    "dtype": col.get('dtype', '?'),
+                })
+        if col_null_rates:
+            avg_null = sum(col_null_rates) / len(col_null_rates)
+            if avg_null > 0:
+                high_null_tables.append({
+                    "table": name,
+                    "avg_null_rate": round(avg_null, 4),
+                    "col_count": len(table.columns),
+                    "row_count": table.row_count,
+                })
+
+    high_null_tables.sort(key=lambda x: -x["avg_null_rate"])
+    high_null_tables = high_null_tables[:top_n]
+    high_null_columns.sort(key=lambda x: -x["null_rate"])
+
+    # ── 数值列范围汇总 ──
+    numeric_ranges: List[dict] = []
+    for name, table in tables.items():
+        for col in table.columns:
+            col_stats = col.get('stats')
+            if not col_stats:
+                continue
+            numeric_ranges.append({
+                "table": name,
+                "column": col['name'],
+                "dtype": col.get('dtype', '?'),
+                "min": col_stats.get('min'),
+                "max": col_stats.get('max'),
+                "mean": col_stats.get('mean'),
+                "unique_count": col.get('unique_count', 0),
+                "null_rate": round(
+                    col.get('null_count', 0) / col.get('total_count', 1), 4
+                ) if col.get('total_count', 0) > 0 else 0.0,
+            })
+
+    # ── 枢纽表（被引用最多） ──
+    hub_tables = sorted(
+        [{"table": n, "in_degree": in_degree[n], "out_degree": out_degree[n],
+          "domain": tables[n].domain_label or "other"}
+         for n in tables],
+        key=lambda x: -x["in_degree"]
+    )
+    hub_tables = [h for h in hub_tables if h["in_degree"] > 0][:top_n]
+
+    # ── 列类型分布 ──
+    dtype_dist: Dict[str, int] = defaultdict(int)
+    for table in tables.values():
+        for col in table.columns:
+            dtype_dist[col.get('dtype', '?')] += 1
+    column_type_dist = dict(sorted(dtype_dist.items(), key=lambda x: -x[1]))
+
+    # ── Pack 数组列统计 ──
+    pack_columns: List[dict] = []
+    for name, table in tables.items():
+        for col in table.columns:
+            pi = col.get('pack_info')
+            if pi and pi.get('is_pack'):
+                pack_columns.append({
+                    "table": name,
+                    "column": col['name'],
+                    "separator": pi['pack_separator'],
+                    "element_dtype": pi['pack_element_dtype'],
+                    "avg_pack_size": pi.get('pack_avg_size', 0),
+                    "unique_elements": len(pi.get('pack_element_samples', [])),
+                })
+    pack_columns.sort(key=lambda x: -x['unique_elements'])
+    overview["pack_array_columns"] = len(pack_columns)
+
+    result = {
+        "_meta": {
+            "description": (
+                "数据质量健康报告。"
+                "overview 提供全局指标（含 pack_array_columns 数量）；"
+                "largest/widest_tables 列出规模最大的表；"
+                "high_null_* 标记数据稀疏区域；"
+                "numeric_ranges 提供数值列值域，用于量纲分析；"
+                "hub_tables 标记核心枢纽表；"
+                "pack_columns 列出所有 Pack 数组列（多值打包格式）。"
+            ),
+            "top_n": top_n,
+        },
+        "overview": overview,
+        "largest_tables": largest_tables,
+        "widest_tables": widest_tables,
+        "empty_tables": empty_tables,
+        "no_pk_tables": no_pk_tables,
+        "high_null_tables": high_null_tables,
+        "high_null_columns": high_null_columns,
+        "numeric_ranges": numeric_ranges,
+        "hub_tables": hub_tables,
+        "column_type_dist": column_type_dist,
+        "pack_columns": pack_columns,
+    }
+
+    if output_path:
+        _write_json(output_path, result)
+
+    return result
+
+
+# ──────────────────────────────────────────────────────────
+# 9. pack_array_candidates.json — pack 数组弱信号候选关系
+# ──────────────────────────────────────────────────────────
+
+def export_pack_array_candidates(
+    graph: SchemaGraph,
+    output_path: Optional[str] = None,
+    candidates: Optional[List] = None,
+    min_confidence: float = 0.0,
+) -> dict:
+    """
+    导出 pack_array 弱信号候选关系，供人工审核和反馈促升。
+
+    pack_array 关系已从主关系图（graph.relations）完全剥离，
+    通过 GraphBuilder 单独收集后以参数形式传入。
+
+    参数：
+        graph       — 仅用于查询列的 pack_info 元数据（不扫描其 relations）
+        output_path — 可选输出路径
+        candidates  — BuildResult.pack_array_candidates（RelationEdge 列表）；
+                      传 None 时回退到扫描 graph.relations（兼容旧调用）
+        min_confidence — 最低置信度过滤（默认 0.0 全部保留）
+
+    格式：
+    {
+      "_meta": {...},
+      "candidates": [
+        {
+          "from_table": "hero_base",
+          "from_column": "skill_ids",
+          "to_table": "skill_base",
+          "to_column": "id",
+          "confidence": 0.72,
+          "evidence": "sep='|', overlap=45/47 (96%)",
+          "pack_info": {"separator": "|", "element_dtype": "int", ...},
+          "promote_hint": "..."
+        },
+        ...
+      ]
+    }
+    """
+    # 确定来源：优先用外传列表，回退到旧版扫描行为
+    if candidates is not None:
+        source_rels = [r for r in candidates if r.confidence >= min_confidence]
+    else:
+        source_rels = [
+            r for r in graph.relations
+            if r.discovery_method == 'pack_array' and r.confidence >= min_confidence
+        ]
+
+    try:
+        from indexer.discovery.pack_array import _BUSINESS_COL_KEYWORDS
+    except ImportError:
+        _BUSINESS_COL_KEYWORDS = frozenset()
+
+    result_candidates: List[dict] = []
+
+    for rel in source_rels:
+        # pack_info 元数据（来自 from_table.from_column 列）
+        pack_meta: dict = {}
+        from_table_obj = graph.tables.get(rel.from_table)
+        if from_table_obj:
+            for col in from_table_obj.columns:
+                if col['name'] == rel.from_column:
+                    pi = col.get('pack_info')
+                    if pi:
+                        pack_meta = {
+                            'separator': pi.get('pack_separator'),
+                            'element_dtype': pi.get('pack_element_dtype'),
+                            'element_samples': (
+                                pi.get('pack_element_samples') or []
+                            )[:10],
+                            'avg_pack_size': pi.get('pack_avg_size', 0),
+                        }
+                    break
+
+        entry: dict = {
+            'from_table': rel.from_table,
+            'from_column': rel.from_column,
+            'to_table': rel.to_table,
+            'to_column': rel.to_column,
+            'confidence': round(rel.confidence, 3),
+            'evidence': rel.evidence or '',
+            'join': (
+                f"{rel.from_table}.{rel.from_column} = "
+                f"{rel.to_table}.{rel.to_column}"
+            ),
+        }
+        if pack_meta:
+            entry['pack_info'] = pack_meta
+
+        # 促升提示（列名词段命中业务关键词）
+        col_stem = rel.from_column.lower()
+        for sfx in ('_ids', '_list', '_array', '_set', '_group',
+                    '_id', '_ref', '_config', '_data'):
+            if col_stem.endswith(sfx) and len(col_stem) > len(sfx):
+                col_stem = col_stem[:-len(sfx)]
+                break
+        stem_parts = set(col_stem.split('_'))
+        matched_kws = [kw for kw in _BUSINESS_COL_KEYWORDS
+                       if kw in stem_parts or col_stem == kw]
+        if matched_kws:
+            entry['promote_hint'] = (
+                f"列名含 {matched_kws} 等业务关键词，"
+                "建议人工确认后通过 relation_feedback.json 提升为正式关系"
+            )
+
+        result_candidates.append(entry)
+
+    result_candidates.sort(key=lambda x: -x['confidence'])
+
+    result = {
+        '_meta': {
+            'total': len(result_candidates),
+            'source': 'BuildResult.pack_array_candidates' if candidates is not None
+                      else 'graph.relations[pack_array] (legacy)',
+            'description': (
+                "pack_array 弱信号候选关系列表（已通过业务关键词白名单初筛）。"
+                "这些关系不在主关系图的扩表路径中，仅供人工审核。"
+                "确认为真实 FK 后可在 relation_feedback.json 中标记 confirmed，"
+                "下次构建时自动提升置信度并纳入主图。"
+            ),
+            'promote_via': 'relation_feedback.json → confirmed 列表',
+        },
+        'candidates': result_candidates,
+    }
+
+    if output_path:
+        _write_json(output_path, result)
+
+    return result
 
 
 def _write_json(output_path: str, data: dict):

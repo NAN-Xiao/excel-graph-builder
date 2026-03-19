@@ -28,12 +28,15 @@ class DirectoryScanner:
     """
 
     def __init__(self, data_root: str, max_sample_rows: int = 200,
-                 max_workers: int = 4, skip_sheet_prefixes: tuple = ('#',)):
+                 max_workers: int = 4, skip_sheet_prefixes: tuple = ('#',),
+                 max_read_rows: int = None):
         self.data_root = Path(data_root)
         self.max_sample_rows = max_sample_rows
         self.max_workers = max_workers
         self.skip_sheet_prefixes = skip_sheet_prefixes
-        self.reader = ExcelReader(max_sample_rows=max_sample_rows)
+        # max_read_rows=None 表示读全量行，彻底避免大表截断
+        self.reader = ExcelReader(max_sample_rows=max_sample_rows,
+                                  max_read_rows=max_read_rows)
         self.extractor = SchemaExtractor(max_sample_rows=max_sample_rows)
         self.logger = SimpleLogger()
 
