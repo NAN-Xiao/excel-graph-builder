@@ -4,6 +4,7 @@ from .rag_assets import (
     export_analysis, export_value_index, export_domain_graph,
     export_enum_cross_ref, export_data_health,
     export_pack_array_candidates,
+    export_embeddings,
 )
 from .cell_locator import export_cell_locator
 from .evidence_assembler import EvidenceAssembler

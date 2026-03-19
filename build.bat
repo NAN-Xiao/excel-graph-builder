@@ -5,6 +5,7 @@ title Build Config Indexer
 echo ==========================================
 echo   Config Indexer - Build Executable
 echo ==========================================
+echo   用法: build.bat [venv]  （venv = 一并拷贝 .venv 到 dist）
 echo.
 
 set "SCRIPT_DIR=%~dp0"
@@ -13,7 +14,7 @@ set "DIST_DIR=%SCRIPT_DIR%..\dist"
 set "BUILD_DIR=%SCRIPT_DIR%build_temp"
 set "COPY_VENV=0"
 
-:: 解析参数：build.bat venv 可将 .venv 一并拷贝到 dist
+:: 解析参数：build.bat venv 拷贝 .venv
 for %%a in (%*) do (
     if /i "%%a"=="venv" set "COPY_VENV=1"
 )
@@ -106,10 +107,21 @@ echo [3/3] 整理发布目录...
 move "%DIST_DIR%\pack\indexer\indexer.exe" "%DIST_DIR%\indexer.exe" >nul
 move "%DIST_DIR%\pack\indexer\excel_graph_builder" "%DIST_DIR%\excel_graph_builder" >nul
 
-:: 复制脚本和配置文件
+:: 复制脚本、配置和文档
 xcopy /y /i /e "%SCRIPT_DIR%configs" "%DIST_DIR%\configs" >nul
 copy /y "%SCRIPT_DIR%install.bat" "%DIST_DIR%\install.bat" >nul
 copy /y "%SCRIPT_DIR%uninstall.bat" "%DIST_DIR%\uninstall.bat" >nul
+copy /y "%SCRIPT_DIR%README.md" "%DIST_DIR%\README.md" >nul
+
+:: 拷贝 embedding 模型（configs 中 embedding_cache_folder 指向的目录，或默认 models）
+set "MODELS_SRC="
+if exist "%SCRIPT_DIR%models" set "MODELS_SRC=%SCRIPT_DIR%models"
+if not defined MODELS_SRC if exist "%SCRIPT_DIR%..\models" set "MODELS_SRC=%SCRIPT_DIR%..\models"
+if defined MODELS_SRC (
+    echo   拷贝 models 到 dist\models...
+    xcopy /y /i /e /q "%MODELS_SRC%" "%DIST_DIR%\models" >nul
+    echo   models 拷贝完成
+)
 
 :: 可选：拷贝 .venv（build.bat venv）
 if "%COPY_VENV%"=="1" (
@@ -131,7 +143,9 @@ echo   发布目录: %DIST_DIR%\
 echo.
 echo   dist\
 echo     indexer.exe                可执行文件
-echo     configs\settings.yml      配置文件（部署时按需修改）
+echo     README.md                  部署说明
+echo     configs\                  配置目录（含 settings.yml）
+echo     models\                  Embedding 模型（若源目录存在）
 echo     install.bat               安装：首次构建 + 注册定时任务
 echo     uninstall.bat             卸载：删除定时任务
 echo     excel_graph_builder\       运行时依赖

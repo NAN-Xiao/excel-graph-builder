@@ -33,8 +33,10 @@ class IndexService:
     # 文件变化后延迟 3 秒执行增量构建（防抖）
     INCREMENTAL_DELAY = 3.0
 
-    def __init__(self, data_root: str, storage_dir: str = "./graph", html_dir: str = "./graph", offline_html: bool = True):
+    def __init__(self, data_root: str, storage_dir: str = "./graph", html_dir: str = "./graph",
+                 offline_html: bool = True, embedding_config: Optional[dict] = None):
         self.data_root = Path(data_root)
+        self.embedding_config = embedding_config or {}
         self.base_storage_dir = Path(storage_dir)
         self.base_storage_dir.mkdir(parents=True, exist_ok=True)
         self.current_link_dir = self.base_storage_dir / "current"
@@ -289,8 +291,32 @@ class IndexService:
                 f"{data_health_path.name}, {pack_candidates_path.name}, "
                 f"{evidence_cfg_path.name}"
             )
+
+            # 16. _embeddings_searchable_text.npy — 预构建 embedding 向量
+            #     在 build 阶段计算，服务端启动时直接加载，无需在线计算
+            self._export_embeddings(str(profiles_path), storage_dir)
+
         except Exception as e:
             self.logger.error(f"LLM/RAG 资产导出失败: {e}")
+
+    def _export_embeddings(self, profiles_path: str, storage_dir: Path):
+        """预构建 embedding 向量——在 build 阶段完成，服务端只需加载"""
+        cfg = self.embedding_config
+        if cfg.get("enabled") == "false":
+            self.logger.info("[Embedding] 已跳过（配置 embedding_enabled=false）")
+            return
+        try:
+            from indexer.export import export_embeddings
+            export_embeddings(
+                profiles_path=profiles_path,
+                output_dir=str(storage_dir),
+                python_executable=cfg.get("python") or None,
+                model_name=cfg.get("model", "BAAI/bge-small-zh-v1.5"),
+                cache_folder=cfg.get("cache_folder", "./models"),
+                device=cfg.get("device", "cpu"),
+            )
+        except Exception as e:
+            self.logger.warning(f"[Embedding] 预构建失败（不影响其他导出）: {e}")
 
     def _publish_build(self, build_dir: Path) -> None:
         self._sync_dir(build_dir, self.base_storage_dir, preserve={"builds", "current", "latest_success", "reports", "alerts.log", "regression_queries.json"})
@@ -552,17 +578,21 @@ def main():
     storage_dir = args.storage_dir or "./graph"
     html_dir = args.html_dir or "./graph"
 
+    embedding_config = {}
+
     if args.config:
         from indexer.core.config import load_config_file
         try:
             cfg = load_config_file(args.config)
+            # 配置约定：路径相对于 dist（exe 所在目录），即配置文件的上级目录
             config_dir = Path(args.config).resolve().parent
+            config_root = config_dir.parent  # dist 目录
 
             def _resolve_cfg_path(path_val: str) -> str:
                 p = Path(path_val)
                 if p.is_absolute():
                     return str(p)
-                return str((config_dir / p).resolve())
+                return str((config_root / p).resolve())
 
             if not args.data_root and "data_root" in cfg:
                 data_root = _resolve_cfg_path(cfg["data_root"])
@@ -570,11 +600,23 @@ def main():
                 storage_dir = _resolve_cfg_path(cfg["graph_dir"])
             if not args.html_dir and "graph_dir" in cfg:
                 html_dir = _resolve_cfg_path(cfg["graph_dir"])
+
+            # Embedding 预构建配置（embedding_ 前缀的 key）
+            for key in ("embedding_python", "embedding_model",
+                        "embedding_cache_folder", "embedding_device",
+                        "embedding_enabled"):
+                if key in cfg:
+                    short_key = key.replace("embedding_", "", 1)
+                    val = cfg[key]
+                    if short_key in ("python", "cache_folder") and not Path(val).is_absolute():
+                        val = _resolve_cfg_path(val)
+                    embedding_config[short_key] = val
         except FileNotFoundError as e:
             print(f"[ERR] {e}")
             sys.exit(1)
 
-    service = IndexService(data_root, storage_dir, html_dir, args.offline_html)
+    service = IndexService(data_root, storage_dir, html_dir, args.offline_html,
+                           embedding_config=embedding_config)
 
     # L3: LLM 紧凑导出
     if args.export_llm:

@@ -25,6 +25,7 @@ RAG 专用资产导出
 """
 
 import json
+import sys
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple, Set
 from collections import defaultdict, deque
@@ -1151,6 +1152,134 @@ def export_pack_array_candidates(
         _write_json(output_path, result)
 
     return result
+
+
+def export_embeddings(
+    profiles_path: str,
+    output_dir: str,
+    *,
+    python_executable: Optional[str] = None,
+    model_name: str = "BAAI/bge-small-zh-v1.5",
+    cache_folder: str = "./models",
+    device: str = "cpu",
+    max_retries: int = 2,
+) -> bool:
+    """
+    预构建 searchable_text 的 embedding 向量（子进程隔离）。
+
+    在 graph build 阶段提前计算，服务端启动时直接加载 .npy 缓存，
+    无需在线计算，彻底消除 tokenizer native crash 风险。
+
+    Args:
+        profiles_path: table_profiles.jsonl 路径
+        output_dir:    输出目录（与其他索引文件同目录）
+        python_executable: 拥有 sentence_transformers 的 Python 解释器路径，
+                           默认使用当前解释器
+        model_name:    SentenceTransformer 模型名
+        cache_folder:  模型本地缓存目录
+        device:        计算设备（cpu / cuda）
+        max_retries:   子进程失败时最大重试次数
+
+    Returns:
+        True 表示成功，False 表示失败（不影响其他导出）
+    """
+    import subprocess
+    import tempfile
+
+    profiles = Path(profiles_path)
+    if not profiles.exists():
+        print(f"  [SKIP] embedding: {profiles_path} 不存在")
+        return False
+
+    texts = []
+    ids = []
+    with open(profiles, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            obj = json.loads(line)
+            st = obj.get("searchable_text", "")
+            if st:
+                ids.append(obj["table_name"])
+                texts.append(st)
+
+    if not texts:
+        print("  [SKIP] embedding: 无 searchable_text")
+        return False
+
+    out_dir = Path(output_dir)
+    npy_path = out_dir / "_embeddings_searchable_text.npy"
+    ids_json_path = out_dir / "_embeddings_searchable_text_ids.json"
+
+    # 检查缓存是否已经有效（ids 完全匹配则跳过）
+    if npy_path.exists() and ids_json_path.exists():
+        try:
+            with open(ids_json_path, encoding="utf-8") as f:
+                cached_ids = json.load(f)
+            if cached_ids == ids:
+                print(f"  [OK] embedding 缓存已是最新 ({len(ids)} 条)")
+                return True
+        except Exception:
+            pass
+
+    py = python_executable or sys.executable
+
+    texts_file = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        ) as f:
+            json.dump(texts, f, ensure_ascii=False)
+            texts_file = f.name
+
+        script = (
+            "import json, sys, numpy as np, os\n"
+            "os.environ.setdefault('OMP_NUM_THREADS','1')\n"
+            "os.environ.setdefault('MKL_NUM_THREADS','1')\n"
+            "os.environ.setdefault('KMP_DUPLICATE_LIB_OK','TRUE')\n"
+            "from sentence_transformers import SentenceTransformer\n"
+            "texts_file, out_file, model_name, cache_folder, device = "
+            "sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]\n"
+            "with open(texts_file, encoding='utf-8') as f: texts=json.load(f)\n"
+            "m=SentenceTransformer(model_name,cache_folder=cache_folder,device=device)\n"
+            "e=m.encode(texts,normalize_embeddings=True,show_progress_bar=False,batch_size=32)\n"
+            "np.save(out_file, np.array(e,dtype=np.float32))\n"
+            "print(f'OK {len(texts)} embeddings')\n"
+        )
+
+        last_err = ""
+        for attempt in range(1, max_retries + 1):
+            result = subprocess.run(
+                [py, "-c", script,
+                 texts_file, str(npy_path), model_name, cache_folder, device],
+                capture_output=True, text=True, timeout=600,
+            )
+
+            if result.returncode == 0 and npy_path.exists():
+                with open(ids_json_path, "w", encoding="utf-8") as f:
+                    json.dump(ids, f, ensure_ascii=False)
+                print(f"  [OK] embedding 预构建完成: {len(ids)} 条"
+                      + (f" (第 {attempt} 次重试)" if attempt > 1 else ""))
+                return True
+
+            last_err = (result.stderr or "")[:500]
+            print(f"  [WARN] embedding 子进程第 {attempt}/{max_retries} 次失败"
+                  f" (rc={result.returncode}): {last_err}")
+
+        print(f"  [WARN] embedding 预构建失败，服务端启动时将自动计算")
+        return False
+
+    except Exception as e:
+        print(f"  [WARN] embedding 预构建异常: {e}")
+        return False
+    finally:
+        if texts_file:
+            try:
+                import os
+                os.unlink(texts_file)
+            except OSError:
+                pass
 
 
 def _write_json(output_path: str, data: dict):

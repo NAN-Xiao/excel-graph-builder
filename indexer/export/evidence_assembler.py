@@ -59,6 +59,14 @@ _ANALYSIS_QUERY_KEYWORDS: Set[str] = {
     'distribution', 'stats', 'mean', 'median', 'percentile', 'analyze',
 }
 
+_ANALYSIS_FOCUS_HINTS: List[str] = [
+    '数值分布', '档位差异', '异常值', '趋势变化', '平衡性风险'
+]
+
+_LOOKUP_FOCUS_HINTS: List[str] = [
+    '关键配置项', '表间关联链路', '命中样例行', '可追溯数据来源'
+]
+
 
 def _select_columns(
     columns: List[Dict],
@@ -187,6 +195,174 @@ def _build_stat_summary(profiles: List[Dict], selected_cols_map: Dict[str, List[
                 summary.append(entry)
 
     return summary
+
+
+def _build_question_focus(
+    query: str,
+    table_names: List[str],
+    analysis_mode: bool,
+) -> Dict[str, Any]:
+    return {
+        'question': query,
+        'mode': 'analysis' if analysis_mode else 'lookup',
+        'focus': (
+            '优先根据全量统计、分组分布和离群值来判断配置特征与潜在风险。'
+            if analysis_mode else
+            '优先根据命中配置样例、表结构和表间关联来回答具体规则与配置含义。'
+        ),
+        'coverage': (
+            _ANALYSIS_FOCUS_HINTS[:] if analysis_mode else _LOOKUP_FOCUS_HINTS[:]
+        ),
+        'table_scope': table_names,
+    }
+
+
+def _summarize_table_role(schema_item: Dict[str, Any]) -> str:
+    description = (schema_item.get('description') or '').strip()
+    columns = schema_item.get('columns', [])
+    key_cols = [c.get('name') for c in columns[:4] if c.get('name')]
+    pk = schema_item.get('primary_key')
+
+    if description:
+        return description
+    if pk and key_cols:
+        return f"以 {pk} 为主键，围绕 {', '.join(key_cols[:3])} 等关键字段组织配置。"
+    if key_cols:
+        return f"包含 {', '.join(key_cols[:4])} 等与当前问题相关的字段。"
+    return "与当前问题相关的配置表。"
+
+
+def _build_table_roles(
+    schema_section: List[Dict[str, Any]],
+    profile_map: Dict[str, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    roles: List[Dict[str, Any]] = []
+    for item in schema_section:
+        tname = item.get('table')
+        profile = profile_map.get(tname, {})
+        roles.append({
+            'table': tname,
+            'file': profile.get('file', ''),
+            'sheet': profile.get('sheet', ''),
+            'domain': item.get('domain', profile.get('domain', 'other')),
+            'row_count': item.get('row_count', 0),
+            'primary_key': item.get('primary_key'),
+            'selected_columns': [c.get('name') for c in item.get('columns', []) if c.get('name')],
+            'role': _summarize_table_role(item),
+        })
+    return roles
+
+
+def _build_join_story(
+    join_section: List[Dict[str, Any]],
+    role_map: Dict[str, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    stories: List[Dict[str, Any]] = []
+    for item in join_section:
+        src = item.get('from')
+        dst = item.get('to')
+        joins = item.get('joins', [])
+        src_role = role_map.get(src, {}).get('role', '')
+        dst_role = role_map.get(dst, {}).get('role', '')
+        if joins:
+            join_text = ' -> '.join(joins)
+            meaning = (
+                f"{src} 通过 {join_text} 关联到 {dst}，"
+                f"可把 {src_role or '上游配置'} 与 {dst_role or '下游配置'} 串成同一条业务链路。"
+            )
+        else:
+            meaning = f"{src} 与 {dst} 之间存在可用的表间关联。"
+        stories.append({
+            'from': src,
+            'to': dst,
+            'hops': item.get('hops', 1),
+            'joins': joins,
+            'min_confidence': item.get('min_confidence', 0),
+            'business_meaning': meaning,
+        })
+    return stories
+
+
+def _build_trend_hints(
+    stat_summary: List[Dict[str, Any]],
+    analytical_result: List[Dict[str, Any]],
+) -> List[str]:
+    hints: List[str] = []
+
+    for stat in stat_summary:
+        if stat.get('semantic_type') != 'metric':
+            continue
+        table = stat.get('table')
+        col = stat.get('column')
+        min_val = stat.get('min')
+        max_val = stat.get('max')
+        mean_val = stat.get('mean')
+        if min_val is None or max_val is None:
+            continue
+        hint = f"{table}.{col} 的取值范围为 {min_val} ~ {max_val}"
+        if mean_val is not None:
+            hint += f"，均值约 {mean_val}"
+        hint += "，可用于判断数值跨度和波动区间。"
+        hints.append(hint)
+        if len(hints) >= 6:
+            break
+
+    for analytics in analytical_result:
+        table = analytics.get('table')
+        for group_stat in analytics.get('groupby_stats', [])[:2]:
+            group_col = group_stat.get('group_col')
+            groups = group_stat.get('groups', [])
+            if len(groups) >= 2:
+                hints.append(
+                    f"{table} 按 {group_col} 可分成 {len(groups)} 组，适合比较不同档位/类型之间的配置差异。"
+                )
+        for metric_col, metric_stats in list(analytics.get('global_stats', {}).items())[:2]:
+            p50 = metric_stats.get('p50')
+            p90 = metric_stats.get('p90')
+            max_val = metric_stats.get('max')
+            if p50 not in (None, 0) and p90 not in (None, 0):
+                if p90 >= p50 * 1.5:
+                    hints.append(
+                        f"{table}.{metric_col} 的 p90 明显高于 p50，说明高位段拉升较明显。"
+                    )
+            if p90 not in (None, 0) and max_val not in (None, 0):
+                if max_val >= p90 * 1.3:
+                    hints.append(
+                        f"{table}.{metric_col} 的最大值明显高于高分位区间，存在需要重点复核的高值样本。"
+                    )
+        for metric_col, outlier_info in analytics.get('outliers', {}).items():
+            if outlier_info.get('high') or outlier_info.get('low'):
+                hints.append(
+                    f"{table}.{metric_col} 存在离群值样本，适合重点检查异常档位或特殊配置。"
+                )
+            if len(hints) >= 10:
+                break
+        if len(hints) >= 10:
+            break
+
+    deduped: List[str] = []
+    seen: Set[str] = set()
+    for hint in hints:
+        if hint not in seen:
+            seen.add(hint)
+            deduped.append(hint)
+    return deduped[:10]
+
+
+def _build_sources(
+    table_names: List[str],
+    profile_map: Dict[str, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    sources: List[Dict[str, Any]] = []
+    for tname in table_names:
+        profile = profile_map.get(tname, {})
+        sources.append({
+            'table': tname,
+            'file': profile.get('file', ''),
+            'sheet': profile.get('sheet', ''),
+            'domain': profile.get('domain', 'other'),
+        })
+    return sources
 
 
 # ──────────────────────────────────────────────────────────
@@ -401,6 +577,12 @@ class EvidenceAssembler:
 
         # ── 4. stat_summary 段 ──
         stat_section = _build_stat_summary(self._profiles, selected_cols_map)
+        question_focus = _build_question_focus(query, table_names, use_analysis_mode)
+        table_roles = _build_table_roles(schema_section, self._profile_map)
+        role_map = {item['table']: item for item in table_roles if item.get('table')}
+        join_story = _build_join_story(join_section, role_map)
+        trend_hints = _build_trend_hints(stat_section, analytical_section)
+        sources = _build_sources(table_names, self._profile_map)
 
         out: Dict[str, Any] = {
             'query': query,
@@ -415,10 +597,15 @@ class EvidenceAssembler:
                 'analysis_mode': use_analysis_mode,
                 'stat_entries': len(stat_section),
             },
+            'question_focus': question_focus,
+            'table_roles': table_roles,
+            'join_story': join_story,
             'schema': schema_section,
             'join': join_section,
             'key_rows': key_rows_section,
             'stat_summary': stat_section,
+            'trend_hints': trend_hints,
+            'sources': sources,
         }
         if analytical_section:
             out['analytical_result'] = analytical_section
@@ -431,11 +618,39 @@ class EvidenceAssembler:
         四段以 Markdown 标题分隔，可直接插入 system / user message。
         """
         lines: List[str] = []
-        query = evidence.get('query', '')
+        focus = evidence.get('question_focus', {})
+        query = focus.get('question') or evidence.get('query', '')
         lines.append(f"## 用户问题\n{query}\n")
 
+        lines.append("## 分析焦点")
+        focus_text = focus.get('focus')
+        if focus_text:
+            lines.append(f"- {focus_text}")
+        coverage = focus.get('coverage', [])
+        if coverage:
+            lines.append(f"- 当前证据重点覆盖：{'、'.join(coverage)}")
+        table_scope = focus.get('table_scope', [])
+        if table_scope:
+            lines.append(f"- 当前涉及表：{', '.join(table_scope)}")
+
+        lines.append("\n## 涉及表与作用")
+        for role in evidence.get('table_roles', []):
+            selected_cols = role.get('selected_columns', [])
+            columns_text = f"；关键列：{', '.join(selected_cols[:6])}" if selected_cols else ""
+            source_text = ""
+            if role.get('file'):
+                source_text = f"（来源：{role['file']}"
+                if role.get('sheet'):
+                    source_text += f" / {role['sheet']}"
+                source_text += "）"
+            lines.append(
+                f"- **{role['table']}** [{role.get('domain', 'other')}]："
+                f"{role.get('role', '与当前问题相关的配置表。')}"
+                f"{columns_text}{source_text}"
+            )
+
         # ── Schema ──
-        lines.append("## 相关表结构（Schema）")
+        lines.append("\n## 相关表结构（Schema）")
         for tbl in evidence.get('schema', []):
             lines.append(
                 f"\n### {tbl['table']}  "
@@ -470,14 +685,28 @@ class EvidenceAssembler:
                 lines.append(''.join(parts))
 
         # ── Join ──
+        join_story = evidence.get('join_story', [])
+        if join_story:
+            lines.append("\n## 关键关联关系")
+            for item in join_story:
+                lines.append(
+                    f"- **{item['from']} -> {item['to']}**：{item.get('business_meaning', '')}"
+                )
+                joins = item.get('joins', [])
+                if joins:
+                    lines.append(f"  - JOIN: `{ ' -> '.join(joins) }`")
+                lines.append(
+                    f"  - 跳数: {item.get('hops', 1)}，最小置信度: {item.get('min_confidence', 0)}"
+                )
+
         join_list = evidence.get('join', [])
         if join_list:
             lines.append("\n## 表间 JOIN 路径")
             for j in join_list:
                 hops = j['hops']
                 conf = j['min_confidence']
-                joins_str = ' → '.join(j['joins'])
-                lines.append(f"- {j['from']} → {j['to']}  ({hops}跳, conf={conf})")
+                joins_str = ' -> '.join(j['joins'])
+                lines.append(f"- {j['from']} -> {j['to']}  ({hops}跳, conf={conf})")
                 lines.append(f"  `{joins_str}`")
 
         # ── Analytical Result（数值分析模式）或 Key Rows ──
@@ -491,7 +720,7 @@ class EvidenceAssembler:
         else:
             key_rows_list = evidence.get('key_rows', [])
             if key_rows_list:
-                lines.append("\n## 关键数据行")
+                lines.append("\n## 关键数据行（样本，不代表全量分布）")
                 for block in key_rows_list:
                     tname = block['table']
                     total = block['total_matched']
@@ -515,7 +744,7 @@ class EvidenceAssembler:
         # ── Stat Summary ──
         stat_list = evidence.get('stat_summary', [])
         if stat_list:
-            lines.append("\n## 统计摘要")
+            lines.append("\n## 全量统计摘要")
             for s in stat_list:
                 tbl = s['table']
                 col = s['column']
@@ -533,6 +762,22 @@ class EvidenceAssembler:
                     lines.append(
                         f"- {tbl}.{col} 枚举({s.get('unique_count')}种): {ev}"
                     )
+
+        trend_hints = evidence.get('trend_hints', [])
+        if trend_hints:
+            lines.append("\n## 趋势观察")
+            for hint in trend_hints:
+                lines.append(f"- {hint}")
+
+        sources = evidence.get('sources', [])
+        if sources:
+            lines.append("\n## 数据来源")
+            for source in sources:
+                src = source.get('file') or '未知文件'
+                sheet = source.get('sheet')
+                domain = source.get('domain', 'other')
+                suffix = f" / {sheet}" if sheet else ""
+                lines.append(f"- {src}{suffix} -> {source.get('table')} [{domain}]")
 
         return '\n'.join(lines)
 
