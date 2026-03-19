@@ -5,6 +5,11 @@
 这份 README 面向**部署和日常运维**，不介绍 RAG 接入细节。  
 RAG 接入方法见 [RAG_USAGE.md](RAG_USAGE.md)。
 
+边界说明：
+
+- 本工程只负责**离线构建数据资产**（文件产物）。
+- 本工程**不提供在线接口**（不提供 HTTP/RPC/SDK query API）。
+
 ## 目录结构
 
 ```text
