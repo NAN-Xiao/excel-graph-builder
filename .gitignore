@@ -19,6 +19,9 @@ data/indexer/
 graph/
 html/
 
+# 模型缓存（embedding 等，体积大）
+models/
+
 # 日志
 *.log
 
