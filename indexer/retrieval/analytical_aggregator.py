@@ -136,12 +136,12 @@ class AnalyticalAggregator:
                     enum_cols.append(cn)
 
         # 识别数值列（排除主键若其为纯 ID）
+        # 注意：RowRetriever._read_df 会把 Excel/CSV 全部按 str 读入，
+        # 这里必须以 schema dtype 为准，而不能依赖 DataFrame 当前 dtype。
         metric_cols: List[str] = []
         for col in table_schema.get('columns', []):
             cn = col['name']
             if cn not in df.columns:
-                continue
-            if df[cn].dtype not in ('int64', 'float64', 'int32', 'float32'):
                 continue
             if col.get('semantic_type') == 'identifier' and cn == pk:
                 continue

@@ -22,7 +22,7 @@ from indexer.scheduler import BuildScheduler
 from indexer.watcher import FileWatcher
 from indexer.core.builder import GraphBuilder
 from indexer.models import SchemaGraph
-from indexer import SimpleLogger
+from indexer import SimpleLogger, _add_file_handler, _logger
 from indexer.validation import BuildValidator
 from indexer.export.atomic_write import atomic_write_json, atomic_write_text
 
@@ -39,6 +39,7 @@ class IndexService:
         self.embedding_config = embedding_config or {}
         self.base_storage_dir = Path(storage_dir)
         self.base_storage_dir.mkdir(parents=True, exist_ok=True)
+        _add_file_handler(_logger, self.base_storage_dir)
         self.current_link_dir = self.base_storage_dir / "current"
         self.latest_success_dir = self.base_storage_dir / "latest_success"
         self.builds_dir = self.base_storage_dir / "builds"
@@ -70,7 +71,7 @@ class IndexService:
         self._load_existing()
 
     def _load_existing(self):
-        """加载已有图谱，并对旧图中缺失 pack_info 的列进行补算。"""
+        """加载已有图谱。"""
         self.current_graph = self.storage.load()
         if self.current_graph:
             stats = self.current_graph.get_stats()
@@ -78,8 +79,6 @@ class IndexService:
                 f"已加载现有图谱: {stats['table_count']} 表, "
                 f"{stats['relation_count']} 关系"
             )
-            # 补算 pack_info：旧图中的 str 列没有 pack_info 字段（升级兼容）
-            self._backfill_pack_info(self.current_graph)
         else:
             self.logger.info("未找到现有图谱，需要首次构建")
 
@@ -100,28 +99,6 @@ class IndexService:
         build_dir = self.builds_dir / build_id
         build_dir.mkdir(parents=True, exist_ok=True)
         return build_dir
-
-    def _backfill_pack_info(self, graph) -> None:
-        """
-        对图中所有缺失 pack_info 的 str 列补算 Pack 数组检测结果。
-
-        场景：增量构建时加载旧版 schema_graph.json（无 pack_info 字段），
-        补算后 PackArrayDiscovery 可以对所有表（不只是本次变更表）生效，
-        无需强制全量重建。
-        """
-        from indexer.scanner.pack_detector import detect_pack_column
-        updated = 0
-        for table in graph.tables.values():
-            for col in table.columns:
-                if col.get('dtype') == 'str' and 'pack_info' not in col:
-                    sv = col.get('sample_values') or []
-                    if sv:
-                        pi = detect_pack_column(sv)
-                        if pi:
-                            col['pack_info'] = pi
-                            updated += 1
-        if updated:
-            self.logger.info(f"[pack_info] 补算完成：{updated} 个 pack 列")
 
     def build_full(self, incremental: bool = False) -> bool:
         """
@@ -206,6 +183,7 @@ class IndexService:
                 export_enum_cross_ref,
                 export_data_health,
                 export_pack_array_candidates,
+                export_rag_preview,
             )
             # ── Schema 层 ──
             # 1. schema_summary.txt — 轻量表名摘要，~500 tokens，RAG 意图提取
@@ -257,16 +235,20 @@ class IndexService:
             domain_graph_path = storage_dir / "domain_graph.json"
             export_domain_graph(graph, str(domain_graph_path))
 
-            # 12. enum_cross_ref.json — 枚举值交叉索引
+            # 12. rag_preview.json — 供静态前端 / RAG 调试使用的预览资产
+            rag_preview_path = storage_dir / "rag_preview.json"
+            export_rag_preview(graph, str(rag_preview_path), analysis=analysis)
+
+            # 13. enum_cross_ref.json — 枚举值交叉索引
             enum_xref_path = storage_dir / "enum_cross_ref.json"
             export_enum_cross_ref(graph, str(enum_xref_path))
 
-            # 13. data_health.json — 数据质量健康报告
+            # 14. data_health.json — 数据质量健康报告
             #     包含：最大/最宽表、空值率、数值列范围、枢纽表、列类型分布
             data_health_path = storage_dir / "data_health.json"
             export_data_health(graph, str(data_health_path))
 
-            # 14. pack_array_candidates.json — pack 数组弱信号候选关系（供人工审核）
+            # 15. pack_array_candidates.json — pack 数组弱信号候选关系（供人工审核）
             #     pack_array 关系已从主图剥离，由 build_full_graph 单独收集并通过参数传入
             pack_candidates_path = storage_dir / "pack_array_candidates.json"
             export_pack_array_candidates(
@@ -275,7 +257,7 @@ class IndexService:
                 candidates=pack_array_candidates,
             )
 
-            # 15. evidence_config.json — 证据组装层入口配置
+            # 16. evidence_config.json — 证据组装层入口配置
             #     描述 EvidenceAssembler 初始化所需的资产路径，
             #     供外部 RAG 系统直接读取后实例化 EvidenceAssembler
             evidence_cfg_path = storage_dir / "evidence_config.json"
@@ -287,12 +269,12 @@ class IndexService:
                 f"{rel_graph_path.name}, {join_path_path.name}, "
                 f"{profiles_path.name}, {cell_loc_path.name}, "
                 f"{analysis_path.name}, {value_idx_path.name}, "
-                f"{domain_graph_path.name}, {enum_xref_path.name}, "
+                f"{domain_graph_path.name}, {rag_preview_path.name}, {enum_xref_path.name}, "
                 f"{data_health_path.name}, {pack_candidates_path.name}, "
                 f"{evidence_cfg_path.name}"
             )
 
-            # 16. _embeddings_searchable_text.npy — 预构建 embedding 向量
+            # 17. _embeddings_searchable_text.npy — 预构建 embedding 向量
             #     在 build 阶段计算，服务端启动时直接加载，无需在线计算
             self._export_embeddings(str(profiles_path), storage_dir)
 
@@ -319,7 +301,14 @@ class IndexService:
             self.logger.warning(f"[Embedding] 预构建失败（不影响其他导出）: {e}")
 
     def _publish_build(self, build_dir: Path) -> None:
-        self._sync_dir(build_dir, self.base_storage_dir, preserve={"builds", "current", "latest_success", "reports", "alerts.log", "regression_queries.json"})
+        self._sync_dir(
+            build_dir,
+            self.base_storage_dir,
+            preserve={
+                "builds", "current", "latest_success", "reports",
+                "alerts.log", "regression_queries.json", "indexer.log",
+            },
+        )
         self._sync_dir(build_dir, self.current_link_dir)
         self._sync_dir(build_dir, self.latest_success_dir)
         # 为 latest_success 保留一份报表在目录根
@@ -334,10 +323,13 @@ class IndexService:
         for item in dst.iterdir():
             if item.name in preserve:
                 continue
-            if item.is_dir():
-                shutil.rmtree(item)
-            else:
-                item.unlink()
+            try:
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+            except PermissionError:
+                self.logger.warning(f"跳过被占用文件: {item}")
         for item in src.iterdir():
             if item.name in preserve:
                 continue
@@ -411,10 +403,15 @@ class IndexService:
             "_meta": {
                 "description": (
                     "证据组装层（EvidenceAssembler）初始化配置。"
-                    "四段结构：schema（列级裁剪后的列 schema）、"
+                    "当前采用 summary + drill-down 双层证据结构。"
+                    "首轮主要证据包含：schema（列级裁剪后的列 schema）、"
                     "join（表间 JOIN 路径）、"
                     "key_rows（谓词过滤的源行数据）、"
                     "stat_summary（数值/枚举统计摘要）。"
+                    "若 analysis_mode 开启，还会返回 analytical_result（全量）"
+                    "和 analytical_result_visible（首轮摘要）。"
+                    "此外还会包含 hidden_but_available 与 fetch_hints，"
+                    "供下游 RAG 系统继续展开取数。"
                 ),
                 "usage": (
                     "from indexer.export.evidence_assembler import EvidenceAssembler\n"
@@ -432,8 +429,14 @@ class IndexService:
                 "表级召回层": "利用 relation_graph.json / join_paths.json / llm_chunks.jsonl 做向量召回，锁定候选表集合",
                 "列级裁剪层": "table_profiles.jsonl 中每列含 semantic_type / domain_role / metric_tag，EvidenceAssembler 按 query 语义裁剪无关列",
                 "行级取数层": "RowRetriever 从源 Excel 按谓词（ID 精确匹配 / 枚举命中 / 数值范围）取回相关行块",
-                "证据组装层": "EvidenceAssembler.assemble() 将四段内容打包；analysis_mode=None 时会按 query 自动启用全量数值分析模式，to_prompt_text() 可直接序列化为 Prompt 文本",
+                "证据组装层": "EvidenceAssembler.assemble() 输出 summary + drill-down 双层证据；analysis_mode=None 时会按 query 自动启用全量数值分析模式，to_prompt_text() 默认优先序列化首轮可见摘要",
             },
+            "recommended_flow": [
+                "下游 RAG 始终优先读取 graph/current/evidence_config.json",
+                "用 assembler_init 直接实例化 EvidenceAssembler",
+                "首轮问答使用 assemble() 返回的摘要证据",
+                "若证据不足，则根据 hidden_but_available / fetch_hints 继续展开取数",
+            ],
         }
         from indexer.export.atomic_write import atomic_write_json
         atomic_write_json(str(output_path), config)
@@ -570,6 +573,12 @@ def main():
                         help="导出 LLM 紧凑摘要（输出路径，如 data/llm_chunks.md 或 .jsonl）")
     parser.add_argument("--query", default=None,
                         help="查询表/列/关系，如 --query hero 查看 hero 相关表和关系")
+    parser.add_argument("--analyze-query", default=None,
+                        help="自然语言分析入口：自动定位相关表并输出证据摘要")
+    parser.add_argument("--suggest-fill-table", default=None,
+                        help="填表辅助入口：为指定表输出候选值和相似样例")
+    parser.add_argument("--fill-query", default="",
+                        help="与 --suggest-fill-table 配合使用，用自然语言描述要填写的目标")
 
     args = parser.parse_args()
 
@@ -636,6 +645,34 @@ def main():
         _handle_query(service.current_graph, args.query)
         return
 
+    if args.analyze_query or args.suggest_fill_table:
+        graph_query_dir = _resolve_query_graph_dir(Path(storage_dir))
+        from indexer.query_assistant import QueryAssistant
+        assistant = QueryAssistant(
+            graph_dir=str(graph_query_dir),
+            data_root=str(data_root),
+        )
+        if not assistant.is_ready():
+            print("[ERR] 缺少查询资产，请先执行 --run-now 构建，确保已生成 table_profiles/join_paths/relation_graph")
+            return
+
+        if args.analyze_query:
+            result = assistant.analyze_query(args.analyze_query)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return
+
+        if args.suggest_fill_table:
+            try:
+                result = assistant.suggest_fill(
+                    table_name=args.suggest_fill_table,
+                    query=args.fill_query or "",
+                )
+            except KeyError as e:
+                print(f"[ERR] {e}")
+                return
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return
+
     if args.daemon:
         # 守护模式：定时调度 + 文件监控 + 可选首次立即构建
         _parse_and_start_schedule(service, args.schedule)
@@ -678,6 +715,17 @@ def _parse_and_start_schedule(service: IndexService, schedule_str: str):
     else:
         service.logger.warning(f"未知调度策略: {schedule_str}，将使用默认 daily:02:00")
         service.start_scheduler("daily", hour=2, minute=0)
+
+
+def _resolve_query_graph_dir(storage_dir: Path) -> Path:
+    """
+    查询助手优先消费 current/，若不存在则回退到 storage_dir 根目录。
+    """
+    current_dir = storage_dir / "current"
+    required = ("table_profiles.jsonl", "join_paths.json", "relation_graph.json")
+    if all((current_dir / name).exists() for name in required):
+        return current_dir
+    return storage_dir
 
 
 def _handle_query(graph: SchemaGraph, keyword: str):

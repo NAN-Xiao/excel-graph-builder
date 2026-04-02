@@ -67,6 +67,10 @@ _LOOKUP_FOCUS_HINTS: List[str] = [
     '关键配置项', '表间关联链路', '命中样例行', '可追溯数据来源'
 ]
 
+_MAX_VISIBLE_GROUPS_PER_ANALYTICS = 8
+_MAX_VISIBLE_GLOBAL_STATS = 8
+_MAX_VISIBLE_OUTLIER_METRICS = 6
+
 
 def _select_columns(
     columns: List[Dict],
@@ -365,6 +369,172 @@ def _build_sources(
     return sources
 
 
+def _build_hidden_but_available(
+    schema_section: List[Dict[str, Any]],
+    join_section: List[Dict[str, Any]],
+    key_rows_section: List[Dict[str, Any]],
+    analytical_section: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    schema_hidden = []
+    for item in schema_section:
+        hidden_cols = max(0, int(item.get('total_columns', 0)) - int(item.get('selected_columns', 0)))
+        if hidden_cols > 0:
+            schema_hidden.append({
+                'table': item.get('table'),
+                'hidden_columns': hidden_cols,
+                'selected_columns': item.get('selected_columns', 0),
+                'total_columns': item.get('total_columns', 0),
+            })
+
+    rows_hidden = []
+    for item in key_rows_section:
+        hidden_rows = max(0, int(item.get('total_matched', 0)) - int(item.get('rows_returned', 0)))
+        if hidden_rows > 0:
+            rows_hidden.append({
+                'table': item.get('table'),
+                'hidden_rows': hidden_rows,
+                'rows_returned': item.get('rows_returned', 0),
+                'total_matched': item.get('total_matched', 0),
+            })
+
+    analytics_hidden = []
+    for item in analytical_section:
+        hidden_group_cols = []
+        for gs in item.get('groupby_stats', []):
+            group_count = len(gs.get('groups', []))
+            if group_count > _MAX_VISIBLE_GROUPS_PER_ANALYTICS:
+                hidden_group_cols.append({
+                    'group_col': gs.get('group_col'),
+                    'total_groups': group_count,
+                    'visible_groups': min(group_count, _MAX_VISIBLE_GROUPS_PER_ANALYTICS),
+                })
+        hidden_global_stats = max(0, len(item.get('global_stats', {})) - _MAX_VISIBLE_GLOBAL_STATS)
+        hidden_outlier_metrics = max(0, len(item.get('outliers', {})) - _MAX_VISIBLE_OUTLIER_METRICS)
+        if hidden_group_cols or hidden_global_stats > 0 or hidden_outlier_metrics > 0:
+            analytics_hidden.append({
+                'table': item.get('table'),
+                'hidden_group_columns': hidden_group_cols,
+                'hidden_global_stats': hidden_global_stats,
+                'hidden_outlier_metrics': hidden_outlier_metrics,
+            })
+
+    return {
+        'schema': schema_hidden,
+        'join': {
+            'total_paths': len(join_section),
+            'all_paths_available': bool(join_section),
+        },
+        'rows': rows_hidden,
+        'analytics': analytics_hidden,
+    }
+
+
+def _build_fetch_hints(
+    query: str,
+    table_names: List[str],
+    schema_section: List[Dict[str, Any]],
+    join_section: List[Dict[str, Any]],
+    key_rows_section: List[Dict[str, Any]],
+    analytical_section: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    hints: List[Dict[str, Any]] = []
+
+    for item in schema_section:
+        total_cols = int(item.get('total_columns', 0))
+        selected_cols = int(item.get('selected_columns', 0))
+        if total_cols > selected_cols:
+            hints.append({
+                'type': 'expand_schema',
+                'table': item.get('table'),
+                'reason': f"当前仅展示 {selected_cols}/{total_cols} 列，可继续拉取完整 schema。",
+                'suggested_args': {
+                    'table': item.get('table'),
+                    'include_all_columns': True,
+                },
+            })
+
+    for item in key_rows_section:
+        total_matched = int(item.get('total_matched', 0))
+        rows_returned = int(item.get('rows_returned', 0))
+        if total_matched > rows_returned:
+            hints.append({
+                'type': 'expand_rows',
+                'table': item.get('table'),
+                'reason': f"当前仅展示 {rows_returned}/{total_matched} 行命中结果，可继续翻页或放宽返回上限。",
+                'suggested_args': {
+                    'table': item.get('table'),
+                    'query': query,
+                    'offset': rows_returned,
+                    'limit': min(100, total_matched - rows_returned),
+                },
+            })
+
+    for item in analytical_section:
+        for gs in item.get('groupby_stats', []):
+            group_count = len(gs.get('groups', []))
+            if group_count > _MAX_VISIBLE_GROUPS_PER_ANALYTICS:
+                hints.append({
+                    'type': 'expand_analysis_groups',
+                    'table': item.get('table'),
+                    'reason': (
+                        f"{item.get('table')}.{gs.get('group_col')} 的分组统计共 {group_count} 组，"
+                        f"当前建议首屏只看前 {_MAX_VISIBLE_GROUPS_PER_ANALYTICS} 组。"
+                    ),
+                    'suggested_args': {
+                        'table': item.get('table'),
+                        'group_col': gs.get('group_col'),
+                        'include_all_groups': True,
+                    },
+                })
+        if len(item.get('global_stats', {})) > _MAX_VISIBLE_GLOBAL_STATS:
+            hints.append({
+                'type': 'expand_global_stats',
+                'table': item.get('table'),
+                'reason': f"{item.get('table')} 还有更多数值列统计未在首屏展示，可继续拉取完整全局统计。",
+                'suggested_args': {
+                    'table': item.get('table'),
+                    'include_all_metrics': True,
+                },
+            })
+
+    if len(table_names) >= 2 and join_section:
+        hints.append({
+            'type': 'expand_join_paths',
+            'reason': "如需解释更完整的业务链路，可继续拉取涉及表之间的全部 JOIN 路径。",
+            'suggested_args': {
+                'tables': table_names,
+                'include_all_join_paths': True,
+            },
+        })
+
+    return hints[:12]
+
+
+def _build_visible_analytics_summary(analytical_section: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    visible: List[Dict[str, Any]] = []
+    for item in analytical_section:
+        visible_item = {
+            'table': item.get('table'),
+            'row_count': item.get('row_count', 0),
+            'groupby_stats': [],
+            'global_stats': {},
+            'outliers': {},
+        }
+        for gs in item.get('groupby_stats', []):
+            visible_item['groupby_stats'].append({
+                'group_col': gs.get('group_col'),
+                'metric_cols': gs.get('metric_cols', []),
+                'groups': (gs.get('groups') or [])[:_MAX_VISIBLE_GROUPS_PER_ANALYTICS],
+                'total_groups': len(gs.get('groups', [])),
+            })
+        for metric_name, stats in list(item.get('global_stats', {}).items())[:_MAX_VISIBLE_GLOBAL_STATS]:
+            visible_item['global_stats'][metric_name] = stats
+        for metric_name, outlier_info in list(item.get('outliers', {}).items())[:_MAX_VISIBLE_OUTLIER_METRICS]:
+            visible_item['outliers'][metric_name] = outlier_info
+        visible.append(visible_item)
+    return visible
+
+
 # ──────────────────────────────────────────────────────────
 # JOIN 路径提取
 # ──────────────────────────────────────────────────────────
@@ -583,6 +753,21 @@ class EvidenceAssembler:
         join_story = _build_join_story(join_section, role_map)
         trend_hints = _build_trend_hints(stat_section, analytical_section)
         sources = _build_sources(table_names, self._profile_map)
+        hidden_but_available = _build_hidden_but_available(
+            schema_section=schema_section,
+            join_section=join_section,
+            key_rows_section=key_rows_section,
+            analytical_section=analytical_section,
+        )
+        fetch_hints = _build_fetch_hints(
+            query=query,
+            table_names=table_names,
+            schema_section=schema_section,
+            join_section=join_section,
+            key_rows_section=key_rows_section,
+            analytical_section=analytical_section,
+        )
+        visible_analytical_section = _build_visible_analytics_summary(analytical_section)
 
         out: Dict[str, Any] = {
             'query': query,
@@ -596,6 +781,7 @@ class EvidenceAssembler:
                 'analytical_tables': len(analytical_section),
                 'analysis_mode': use_analysis_mode,
                 'stat_entries': len(stat_section),
+                'evidence_mode': 'summary_plus_drilldown',
             },
             'question_focus': question_focus,
             'table_roles': table_roles,
@@ -606,9 +792,12 @@ class EvidenceAssembler:
             'stat_summary': stat_section,
             'trend_hints': trend_hints,
             'sources': sources,
+            'hidden_but_available': hidden_but_available,
+            'fetch_hints': fetch_hints,
         }
         if analytical_section:
             out['analytical_result'] = analytical_section
+            out['analytical_result_visible'] = visible_analytical_section
         return out
 
     def to_prompt_text(self, evidence: Dict, max_rows_display: int = 10) -> str:
@@ -710,7 +899,7 @@ class EvidenceAssembler:
                 lines.append(f"  `{joins_str}`")
 
         # ── Analytical Result（数值分析模式）或 Key Rows ──
-        analytical_list = evidence.get('analytical_result', [])
+        analytical_list = evidence.get('analytical_result_visible') or evidence.get('analytical_result', [])
         if analytical_list:
             from indexer.retrieval.analytical_aggregator import AnalyticalAggregator
             agg = AnalyticalAggregator()
@@ -778,6 +967,29 @@ class EvidenceAssembler:
                 domain = source.get('domain', 'other')
                 suffix = f" / {sheet}" if sheet else ""
                 lines.append(f"- {src}{suffix} -> {source.get('table')} [{domain}]")
+
+        hidden = evidence.get('hidden_but_available', {})
+        fetch_hints = evidence.get('fetch_hints', [])
+        if hidden or fetch_hints:
+            lines.append("\n## 可继续展开")
+            for item in hidden.get('schema', [])[:5]:
+                lines.append(
+                    f"- {item['table']} 还有 {item['hidden_columns']} 列未展示，当前仅展开 {item['selected_columns']}/{item['total_columns']} 列。"
+                )
+            for item in hidden.get('rows', [])[:5]:
+                lines.append(
+                    f"- {item['table']} 还有 {item['hidden_rows']} 行命中结果未展示，当前展示 {item['rows_returned']}/{item['total_matched']} 行。"
+                )
+            for item in hidden.get('analytics', [])[:5]:
+                table = item.get('table')
+                if item.get('hidden_group_columns'):
+                    cols = ', '.join(g.get('group_col', '') for g in item.get('hidden_group_columns', [])[:3] if g.get('group_col'))
+                    if cols:
+                        lines.append(f"- {table} 的 {cols} 分组统计还有更多组可继续展开。")
+                if item.get('hidden_global_stats', 0) > 0:
+                    lines.append(f"- {table} 还有 {item['hidden_global_stats']} 个数值列统计未在首屏展示。")
+            for hint in fetch_hints[:6]:
+                lines.append(f"- 提示: {hint.get('reason', '')}")
 
         return '\n'.join(lines)
 

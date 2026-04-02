@@ -1,6 +1,13 @@
-# 游戏配置表证据系统 — 外部 RAG 系统接入指南 v4
+# 游戏配置表证据系统 — 外部 RAG 系统接入指南 v5
 
 > 面向需要接入本系统数据的 **外部 RAG 系统**，完整描述产物目录、四层召回架构、文件读取方式、数值分析模式，以及构建后回归/回退机制。
+
+v5 重点更新：
+
+- `EvidenceAssembler` 采用 `summary + drill-down` 双层证据结构
+- 首屏证据新增 `hidden_but_available` 和 `fetch_hints`
+- `analytical_result` 保留全量分析结果，同时新增 `analytical_result_visible` 供首轮问答直接使用
+- 更明确地区分“底层完整数据”和“首屏给 LLM 的受控上下文”
 
 边界说明：
 
@@ -65,7 +72,8 @@
 │    ② join       — 表间 JOIN 路径                       │
 │    ③ key_rows   — 谓词过滤行块（Markdown 表格）        │
 │    ④ stat_summary — 数值/枚举统计摘要                  │
-│  → to_prompt_text() → 注入 LLM                        │
+│    ⑤ hidden_but_available / fetch_hints               │
+│  → 首轮摘要问答 + 二次继续取数                         │
 └───────────────────────────────────────────────────────┘
 ```
 
@@ -93,7 +101,14 @@
 - 只有通过门槛才同步到 `graph/current/`
 - 若出现 `P0`，则继续保留上一版 `graph/current/`，不会让坏版本覆盖线上
 
-每个已发布版本目录中自动导出以下 15 个文件：
+补充说明：
+
+- `增量构建` 说的是扫描和关系重算策略，不是产物目录格式
+- 所以即使只重读了少量变更表，系统仍然会先写一个新的 `graph/builds/<build_id>/` 快照目录
+- 下游 RAG 不需要关心这次是不是增量，只需要始终读取 `graph/current/`
+- 若要排查某次具体构建，再回看对应的 `graph/builds/<build_id>/`
+
+每个已发布版本目录中自动导出以下 16 个文件：
 
 | # | 文件 | 用途 | 召回层 | 加载建议 |
 |:--|:--|:--|:--|:--|
@@ -108,10 +123,11 @@
 | 9 | `cell_locator.json` | 表→文件→行号→列号，精确溯源 | 辅助 | 推荐 |
 | 10 | `value_index.json` | 跨表共享值反查（值→出现的表和列） | 层1 | 推荐 |
 | 11 | `domain_graph.json` | 域级关系聚合统计（hero↔skill 共 N 条关系） | 层1 | 推荐 |
-| 12 | `enum_cross_ref.json` | 跨表共享枚举空间列对 | 层2 | 可选 |
-| 13 | `data_health.json` | 数据质量报告（空值率/数值范围/pack列/枢纽表） | 调试 | 可选 |
-| 14 | `pack_array_candidates.json` | pack_array 弱信号候选关系（已从主图剥离） | 审核 | 可选 |
-| 15 | `evidence_config.json` | EvidenceAssembler 初始化配置 | 层4 | 推荐 |
+| 12 | `rag_preview.json` | 供静态前端 / RAG 调试使用的轻量预览资产 | 调试/UI | 可选 |
+| 13 | `enum_cross_ref.json` | 跨表共享枚举空间列对 | 层2 | 可选 |
+| 14 | `data_health.json` | 数据质量报告（空值率/数值范围/pack列/枢纽表） | 调试 | 可选 |
+| 15 | `pack_array_candidates.json` | pack_array 弱信号候选关系（已从主图剥离） | 审核 | 可选 |
+| 16 | `evidence_config.json` | EvidenceAssembler 初始化配置 | 层4 | 推荐 |
 
 ---
 
@@ -153,6 +169,27 @@ CENTRALITY: dict[str, float] = ANALYSIS.get("centrality", {})
 MODULES: list[list[str]] = ANALYSIS.get("modules", [])
 TABLE_MODULE: dict[str, int] = {t: i for i, m in enumerate(MODULES) for t in m}
 ```
+
+建议下游 RAG 默认采用两段式：
+
+1. 首轮只给 LLM `summary evidence`
+2. 若模型或编排器判断证据不够，再依据 `fetch_hints` 继续拉取 `drill-down evidence`
+
+这样可以同时满足：
+
+- 底层数据保持完整
+- 首轮 prompt 不会被大表和宽表淹没
+- 大表分析结果仍可按需完整展开
+
+如果你还需要在静态可视化前端中查看与 RAG 证据一致的预览，可直接使用：
+
+- `rag_preview.json`
+
+它与 HTML 报告中的 RAG 证据面板共用同一套预览数据结构，适合：
+
+- 调试“问题会命中哪些表”
+- 调试“首轮证据会展示哪些列和统计”
+- 校验前端视图与 RAG 编排层是否一致
 
 ---
 
@@ -461,6 +498,70 @@ assembler = EvidenceAssembler(**cfg["assembler_init"])
 # )
 ```
 
+### 7.1.1 `evidence_config.json` 字段说明
+
+`evidence_config.json` 的目标是让下游 RAG 零猜测完成初始化。
+
+典型结构如下：
+
+```json
+{
+  "_meta": {
+    "description": "...",
+    "usage": "..."
+  },
+  "assembler_init": {
+    "profiles_path": "D:/.../graph/current/table_profiles.jsonl",
+    "join_paths_path": "D:/.../graph/current/join_paths.json",
+    "data_root": "D:/.../excel"
+  },
+  "layer_description": {
+    "表级召回层": "...",
+    "列级裁剪层": "...",
+    "行级取数层": "...",
+    "证据组装层": "..."
+  },
+  "recommended_flow": [
+    "..."
+  ]
+}
+```
+
+各字段含义：
+
+| 字段 | 是否必需 | 用途 |
+|:--|:--|:--|
+| `_meta.description` | 否 | 给接入方的人类说明 |
+| `_meta.usage` | 否 | 最小初始化示例 |
+| `assembler_init.profiles_path` | **是** | 指向 `table_profiles.jsonl` |
+| `assembler_init.join_paths_path` | **是** | 指向 `join_paths.json` |
+| `assembler_init.data_root` | **是** | 指向原始 `excel` 数据根目录，供回源取数与全量统计 |
+| `layer_description` | 否 | 解释四层召回 / 证据结构 |
+| `recommended_flow` | 否 | 给编排器的推荐接入顺序 |
+
+### 7.1.2 下游应如何使用 `assembler_init`
+
+推荐直接透传：
+
+```python
+with open(DATA / "evidence_config.json", encoding="utf-8") as f:
+    cfg = json.load(f)
+
+assembler = EvidenceAssembler(**cfg["assembler_init"])
+```
+
+不建议下游自己手写这些路径，原因是：
+
+- `graph/current/` 会随着发布切换
+- `data_root` 可能和 `graph` 目录不在同一层
+- 构建机和部署机路径可能不同，最好始终以产物中的配置为准
+
+### 7.1.3 常见误区
+
+- 不要把 `evidence_config.json` 当成完整索引数据，它只是入口配置
+- 不要忽略 `data_root`，否则 `RowRetriever` 和全量分析模式无法回源
+- 不要直接读取 `graph/builds/<build_id>/evidence_config.json` 做在线接入，应优先读 `graph/current/evidence_config.json`
+
 ### 7.2 组装证据
 
 ```python
@@ -474,7 +575,7 @@ evidence = assembler.assemble(
 )
 ```
 
-### 7.3 四段结构详解
+### 7.3 证据结构详解（v5）
 
 ```python
 # 段①: schema — 列级裁剪后的表结构
@@ -510,9 +611,106 @@ for s in evidence["stat_summary"]:
               f"min={s['min']} max={s['max']} mean={s['mean']}")
     else:
         print(f"{s['table']}.{s['column']} 枚举: {s.get('enum_values')}")
+
+# 段⑤: hidden_but_available — 首屏未展开、但仍可继续获取的内容
+print(evidence["hidden_but_available"])
+# 示例：
+# {
+#   "schema": [{"table": "libao", "hidden_columns": 37, ...}],
+#   "join": {"total_paths": 3, "all_paths_available": True},
+#   "rows": [{"table": "libao", "hidden_rows": 182, ...}],
+#   "analytics": [{"table": "libao", "hidden_group_columns": [...], ...}]
+# }
+
+# 段⑥: fetch_hints — 建议下游继续追取的入口提示
+for hint in evidence["fetch_hints"]:
+    print(hint["type"], hint["reason"], hint["suggested_args"])
 ```
 
-### 7.4 格式化为 Prompt
+关键约定：
+
+- `schema` / `join` / `key_rows` / `stat_summary` 仍然是首轮主要证据
+- `analytical_result` 仍然保留全量分析结果，适合程序继续消费
+- `analytical_result_visible` 是给首轮 LLM 使用的压缩版分析结果
+- `hidden_but_available` 明确告诉下游“还有什么没展示，但系统里有”
+- `fetch_hints` 明确告诉下游“下一步该取什么”
+
+### 7.4 推荐接入方式：Summary + Drill-down
+
+建议不要把 `analytical_result` 整体直接塞给 LLM，而是按下面方式接：
+
+```python
+evidence = assembler.assemble(
+    query=query,
+    table_names=table_names,
+    analysis_mode=None,
+)
+
+# 首轮：只给摘要视图
+prompt_text = assembler.to_prompt_text(evidence)
+
+# 编排器判断是否需要继续展开
+if evidence["fetch_hints"]:
+    next_action = evidence["fetch_hints"][0]
+    # 例如：
+    # - expand_schema
+    # - expand_rows
+    # - expand_analysis_groups
+    # - expand_global_stats
+    # - expand_join_paths
+```
+
+推荐策略：
+
+- 配置查询：优先用 `schema + join + key_rows`
+- 分布分析：优先用 `analytical_result_visible + stat_summary + trend_hints`
+- 需要完整性时：程序侧读取 `analytical_result` 或按 `fetch_hints` 继续回源
+
+最小编排示例：
+
+```python
+def answer_with_drilldown(query: str, table_names: list[str]):
+    evidence = assembler.assemble(
+        query=query,
+        table_names=table_names,
+        analysis_mode=None,
+    )
+
+    first_prompt = assembler.to_prompt_text(evidence)
+    answer_1 = llm_answer(first_prompt)
+
+    # 如果首轮证据已经足够，直接返回
+    if not evidence.get("fetch_hints"):
+        return answer_1
+
+    # 如果你的编排器发现模型还在要求“更多列 / 更多行 / 更完整分组”，
+    # 可按 hint 类型继续回源补证据
+    next_hint = evidence["fetch_hints"][0]
+    hint_type = next_hint["type"]
+
+    if hint_type == "expand_analysis_groups":
+        # 程序侧可直接读取 evidence["analytical_result"]，
+        # 或按 suggested_args 拉取更完整的分析结果
+        full_analytics = evidence.get("analytical_result", [])
+        second_prompt = first_prompt + "\n\n补充完整分析:\n" + json.dumps(
+            full_analytics, ensure_ascii=False
+        )
+        return llm_answer(second_prompt)
+
+    if hint_type == "expand_rows":
+        # 这里示例为重新调高 max_rows_per_table
+        evidence_2 = assembler.assemble(
+            query=query,
+            table_names=table_names,
+            max_rows_per_table=100,
+            analysis_mode=False,
+        )
+        return llm_answer(assembler.to_prompt_text(evidence_2))
+
+    return answer_1
+```
+
+### 7.5 格式化为 Prompt
 
 ```python
 prompt_text = assembler.to_prompt_text(
@@ -549,7 +747,7 @@ messages = [
 ]
 ```
 
-### 7.5 数值分析模式（analysis_mode）— 游戏策划专用
+### 7.6 数值分析模式（analysis_mode）— 游戏策划专用
 
 当 query 为**数值分析**（各档位平均、分布、离群值、平衡性、商业化风险、异常值）时，`analysis_mode=None` 会自动启用全量统计；也可以显式传 `True`：
 在 Python 侧做全量聚合，结果以紧凑表格给 LLM，**不丢数据、分析准确**。
@@ -571,10 +769,18 @@ evidence = assembler.assemble(
 
 # analysis_mode 开启时：
 # - key_rows 为空，改为 analytical_result
+# - analytical_result 保留全量统计结果
+# - analytical_result_visible 提供首轮可控摘要
 # - 每表：按枚举列分组 → count + 各数值列 mean/min/max/p50/p90
 # - 离群值：IQR 法检测，列出偏高/偏低的具体行（id + 值）
-# - to_prompt_text() 自动格式化为 "## 数值分析（全量统计，无采样）"
+# - to_prompt_text() 默认优先使用 analytical_result_visible
 ```
+
+对下游 RAG 的建议：
+
+- 若只是首轮回答，优先使用 `analytical_result_visible`
+- 若模型明确要求“完整分组”“全部指标”“全部异常值”，再读取 `analytical_result`
+- 不要把“底层完整性”寄托在单次 prompt 上，应由编排器多轮追取保证
 
 **输出示例**（紧凑，≈500–2000 tokens/表）：
 ```

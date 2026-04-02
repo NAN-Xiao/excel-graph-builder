@@ -15,11 +15,13 @@ from typing import Any, Dict, List, Optional
 
 _REQUIRED_ARTIFACTS = (
     "schema_graph.json",
+    "schema_graph.html",
     "schema_summary.txt",
     "llm_chunks.jsonl",
     "table_profiles.jsonl",
     "relation_graph.json",
     "join_paths.json",
+    "rag_preview.json",
     "evidence_config.json",
 )
 

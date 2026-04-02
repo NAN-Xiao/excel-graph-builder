@@ -8,3 +8,4 @@ from .rag_assets import (
 )
 from .cell_locator import export_cell_locator
 from .evidence_assembler import EvidenceAssembler
+from .rag_preview import export_rag_preview

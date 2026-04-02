@@ -410,6 +410,169 @@ def test_build_validator_missing_artifacts_and_regression():
         shutil.rmtree(tmp_dir)
 
 
+def test_query_assistant_analyze_and_fill():
+    """统一查询助手应支持自然语言定位、证据组装和填表辅助。"""
+    from indexer.query_assistant import QueryAssistant
+
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        data_dir = os.path.join(tmp_dir, "data")
+        graph_dir = os.path.join(tmp_dir, "graph")
+        os.makedirs(data_dir, exist_ok=True)
+        os.makedirs(graph_dir, exist_ok=True)
+
+        csv_path = os.path.join(data_dir, "army.csv")
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write("id,name,armyClass,level,baseAttack\n")
+            f.write("101001,army_name_101001,101,1,62\n")
+            f.write("101002,army_name_101002,101,2,128\n")
+            f.write("201001,army_name_201001,201,1,64\n")
+
+        profile = {
+            "table_name": "army",
+            "file": "army.csv",
+            "sheet": 0,
+            "header_offset": 0,
+            "domain": "battle",
+            "row_count": 3,
+            "primary_key": "id",
+            "description": "army table",
+            "searchable_text": "army 士兵 兵种 name armyClass level baseAttack",
+            "columns": [
+                {"name": "id", "dtype": "int", "semantic_type": "identifier", "is_pk": True},
+                {"name": "name", "dtype": "str", "semantic_type": "descriptor", "is_fk": True, "fk_target": "key_new.id",
+                 "sample_values": ["army_name_101001", "army_name_101002"]},
+                {"name": "armyClass", "dtype": "int", "semantic_type": "enum", "is_enum": True, "enum_values": [101, 201]},
+                {"name": "level", "dtype": "int", "semantic_type": "enum", "is_enum": True, "enum_values": [1, 2]},
+                {"name": "baseAttack", "dtype": "int", "semantic_type": "metric", "metric_tag": "attack",
+                 "sample_values": [62, 128, 64], "stats": {"min": 62, "max": 128, "mean": 84.6667}},
+            ],
+        }
+
+        with open(os.path.join(graph_dir, "table_profiles.jsonl"), "w", encoding="utf-8") as f:
+            f.write(json.dumps(profile, ensure_ascii=False) + "\n")
+        with open(os.path.join(graph_dir, "join_paths.json"), "w", encoding="utf-8") as f:
+            json.dump({"paths": {}}, f, ensure_ascii=False)
+        with open(os.path.join(graph_dir, "relation_graph.json"), "w", encoding="utf-8") as f:
+            json.dump({"tables": {"army": {"neighbors": []}}}, f, ensure_ascii=False)
+        with open(os.path.join(graph_dir, "column_index.json"), "w", encoding="utf-8") as f:
+            json.dump({
+                "name": ["army"],
+                "armyclass": ["army"],
+                "_normalized": {"level": ["army"]},
+                "_cn_segments": {"兵种": ["army"], "攻击": ["army"]},
+            }, f, ensure_ascii=False)
+
+        assistant = QueryAssistant(graph_dir=graph_dir, data_root=data_dir)
+        assert assistant.is_ready() is True
+
+        analyzed = assistant.analyze_query("分析兵种攻击分布")
+        assert analyzed["located_tables"][0]["table"] == "army", analyzed
+        assert analyzed["evidence"]["tables"] == ["army"], analyzed["evidence"]
+        assert analyzed["evidence"]["_meta"]["analysis_mode"] is True, analyzed["evidence"]["_meta"]
+
+        fill = assistant.suggest_fill("army", query="101001")
+        assert fill["table"] == "army", fill
+        assert fill["matched_rows"]["total"] >= 1, fill
+        name_suggestion = next(x for x in fill["column_suggestions"] if x["column"] == "name")
+        assert name_suggestion["is_fk"] is True, name_suggestion
+        assert name_suggestion["fk_target"] == "key_new.id", name_suggestion
+        print("  [OK] test_query_assistant_analyze_and_fill")
+    finally:
+        shutil.rmtree(tmp_dir)
+
+
+def test_analytical_aggregator_numeric_stats_from_string_df():
+    """即使原始表按字符串读入，也应能产出数值分布统计。"""
+    from indexer.retrieval.analytical_aggregator import AnalyticalAggregator
+    import pandas as pd
+
+    df = pd.DataFrame({
+        "id": ["1", "2", "3", "4"],
+        "group": ["A", "A", "B", "B"],
+        "price": ["10", "20", "30", "40"],
+    })
+    profile = {
+        "table_name": "libao",
+        "primary_key": "id",
+        "columns": [
+            {"name": "id", "dtype": "int", "semantic_type": "identifier", "is_pk": True},
+            {"name": "group", "dtype": "string", "semantic_type": "enum", "is_enum": True, "enum_values": ["A", "B"]},
+            {"name": "price", "dtype": "int", "semantic_type": "metric", "metric_tag": "price"},
+        ],
+    }
+
+    agg = AnalyticalAggregator()
+    result = agg.full_table_analytics(df, profile)
+
+    assert result["global_stats"]["price"]["mean"] == 25.0, result
+    assert result["global_stats"]["price"]["max"] == 40, result
+    assert result["groupby_stats"], result
+    print("  [OK] test_analytical_aggregator_numeric_stats_from_string_df")
+
+
+def test_evidence_assembler_summary_and_drilldown_hints():
+    """证据包应同时提供摘要视图和可继续展开提示，方便下游 RAG 二次取数。"""
+    from indexer.export.evidence_assembler import EvidenceAssembler
+
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        data_dir = os.path.join(tmp_dir, "data")
+        os.makedirs(data_dir, exist_ok=True)
+        csv_path = os.path.join(data_dir, "libao.csv")
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write("id,kind,price\n")
+            for i in range(1, 16):
+                kind = chr(ord('A') + i - 1)
+                f.write(f"{i},{kind},{i * 10}\n")
+
+        profiles_path = os.path.join(tmp_dir, "table_profiles.jsonl")
+        join_paths_path = os.path.join(tmp_dir, "join_paths.json")
+        profile = {
+            "table_name": "libao",
+            "file": "libao.csv",
+            "sheet": 0,
+            "header_offset": 0,
+            "domain": "shop",
+            "row_count": 15,
+            "primary_key": "id",
+            "description": "gift bag table",
+            "columns": [
+                {"name": "id", "dtype": "int", "semantic_type": "identifier", "is_pk": True},
+                {"name": "kind", "dtype": "string", "semantic_type": "enum", "is_enum": True,
+                 "enum_values": [chr(ord('A') + i) for i in range(15)]},
+                {"name": "price", "dtype": "int", "semantic_type": "metric", "metric_tag": "price",
+                 "stats": {"min": 10, "max": 150, "mean": 80}},
+            ],
+        }
+        with open(profiles_path, "w", encoding="utf-8") as f:
+            f.write(json.dumps(profile, ensure_ascii=False) + "\n")
+        with open(join_paths_path, "w", encoding="utf-8") as f:
+            json.dump({"paths": {}}, f, ensure_ascii=False)
+
+        assembler = EvidenceAssembler(
+            profiles_path=profiles_path,
+            join_paths_path=join_paths_path,
+            data_root=data_dir,
+        )
+        evidence = assembler.assemble(
+            query="分析礼包价格分布",
+            table_names=["libao"],
+            analysis_mode=True,
+        )
+
+        assert evidence["_meta"]["evidence_mode"] == "summary_plus_drilldown", evidence["_meta"]
+        assert "hidden_but_available" in evidence, evidence
+        assert "fetch_hints" in evidence, evidence
+        assert "analytical_result_visible" in evidence, evidence
+        assert evidence["analytical_result_visible"], evidence
+        assert evidence["analytical_result_visible"][0]["global_stats"]["price"]["mean"] == 80.0, evidence
+        assert isinstance(evidence["fetch_hints"], list), evidence["fetch_hints"]
+        print("  [OK] test_evidence_assembler_summary_and_drilldown_hints")
+    finally:
+        shutil.rmtree(tmp_dir)
+
+
 if __name__ == "__main__":
     print("Running smoke tests...")
     test_normalize_value()
@@ -424,4 +587,7 @@ if __name__ == "__main__":
     test_join_paths_two_hops()
     test_evidence_assembler_auto_analysis_mode()
     test_build_validator_missing_artifacts_and_regression()
+    test_query_assistant_analyze_and_fill()
+    test_analytical_aggregator_numeric_stats_from_string_df()
+    test_evidence_assembler_summary_and_drilldown_hints()
     print("\nAll tests passed!")

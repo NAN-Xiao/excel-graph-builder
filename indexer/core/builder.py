@@ -186,7 +186,6 @@ class GraphBuilder:
         self.logger.info("\n[关系发现] 执行所有策略...")
 
         # 增量模式的核心：只清除受影响表的关系，保留其余
-        # 同时顺带清理旧图中可能残留的 pack_array 关系（迁移兼容）
         changed_tables: Optional[Set[str]] = None
         if incremental and affected_tables:
             before_count = len(graph.relations)
@@ -194,7 +193,6 @@ class GraphBuilder:
                 r for r in graph.relations
                 if r.from_table not in affected_tables
                 and r.to_table not in affected_tables
-                and r.discovery_method != 'pack_array'   # 剥离残留 pack_array
             ]
             kept = len(graph.relations)
             self.logger.info(
@@ -204,30 +202,12 @@ class GraphBuilder:
             )
             changed_tables = affected_tables
         elif incremental and not affected_tables:
-            # 无文件变更，但仍需剥离旧 pack_array 关系（首次升级时执行一次）
-            old_pack = [r for r in graph.relations if r.discovery_method == 'pack_array']
-            if old_pack:
-                graph.relations = [r for r in graph.relations
-                                   if r.discovery_method != 'pack_array']
-                self.logger.info(
-                    f"  [迁移] 从主图剥离 {len(old_pack)} 条旧 pack_array 关系")
-                # 把它们放进候选集，避免信息丢失
-                result.pack_array_candidates.extend(old_pack)
-
             self.logger.info("  无变更，跳过关系发现")
             result.discover_time = 0
             result.table_count = len(graph.tables)
             result.relation_count = len(graph.relations)
             result.total_time = time.time() - total_start
             return graph, result
-        else:
-            # 全量构建：清空主图里所有旧 pack_array 关系
-            pack_residual = sum(1 for r in graph.relations
-                                if r.discovery_method == 'pack_array')
-            if pack_residual:
-                graph.relations = [r for r in graph.relations
-                                   if r.discovery_method != 'pack_array']
-                self.logger.info(f"  [迁移] 清理旧 pack_array 关系 {pack_residual} 条")
 
         # 策略分组：
         #   independent — 可并行、不依赖其他策略输出（不含 pack_array / transitive）

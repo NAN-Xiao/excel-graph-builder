@@ -12,9 +12,10 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-from indexer.models import SchemaGraph, RelationEdge
+from indexer.models import SchemaGraph
 from indexer import SimpleLogger
 from indexer.discovery.game_dictionary import classify_domain
+from indexer.export.rag_preview import build_rag_preview
 
 # 3d-force-graph CDN URL
 FORCE_GRAPH_JS_URL = "https://unpkg.com/3d-force-graph"
@@ -57,7 +58,7 @@ class HTMLReportGenerator:
         return result
 
     def generate(self, graph: SchemaGraph, build_result: Optional[dict] = None,
-                 analysis=None) -> str:
+                 analysis=None, rag_preview: Optional[dict] = None) -> str:
         """生成 HTML 报告
 
         Args:
@@ -111,22 +112,9 @@ class HTMLReportGenerator:
         if build_result:
             stats.update(build_result)
 
-        tables_meta = {}
-        for name, table in graph.tables.items():
-            tables_meta[name] = {
-                'columns': table.columns,
-                'primary_key': table.primary_key,
-                'row_count': table.row_count,
-                'file_path': table.file_path,
-                'enum_columns': {k: v[:20] for k, v in table.enum_columns.items()} if table.enum_columns else {},
-                'numeric_columns': table.numeric_columns
-            }
+        rag_preview_data = rag_preview or build_rag_preview(graph, analysis=analysis)
 
-        # 构建分析数据（供前端展示）
-        analysis_data = self._build_analysis_data(analysis)
-
-        html_content = self._build_html(
-            nodes_data, edges_data, stats, tables_meta, analysis_data)
+        html_content = self._build_html(nodes_data, edges_data, stats, rag_preview_data)
 
         output_file = self.output_dir / "schema_graph.html"
         with open(output_file, 'w', encoding='utf-8') as f:
@@ -134,35 +122,15 @@ class HTMLReportGenerator:
         self.logger.success(f"HTML 报告已生成: {output_file}")
         return str(output_file)
 
-    @staticmethod
-    def _build_analysis_data(analysis) -> dict:
-        """将 AnalysisResult 转换为前端可用的 JSON 数据"""
-        if analysis is None:
-            return {}
-        return {
-            'cycles': [list(c) for c in (analysis.cycles or [])[:20]],
-            'centrality_top': sorted(
-                analysis.centrality.items(),
-                key=lambda x: x[1], reverse=True
-            )[:15] if analysis.centrality else [],
-            'modules': [
-                sorted(list(m))[:20] for m in (analysis.modules or [])[:20]
-            ],
-            'orphans': sorted(analysis.orphans or [])[:50],
-            'critical_path': list(analysis.critical_path or []),
-        }
-
     def _get_group(self, table) -> str:
         """根据表名特征分组（影响节点颜色），使用统一业务域规则"""
         return classify_domain(table.name)
 
-    def _build_html(self, nodes, edges, stats, tables_meta=None,
-                     analysis_data=None):
+    def _build_html(self, nodes, edges, stats, rag_preview_data=None):
         """生成完整 HTML"""
         nodes_json = json.dumps(nodes, ensure_ascii=False, default=str)
         edges_json = json.dumps(edges, ensure_ascii=False, default=str)
-        tables_meta_json = json.dumps(tables_meta or {}, ensure_ascii=False, default=str)
-        analysis_json = json.dumps(analysis_data or {}, ensure_ascii=False, default=str)
+        rag_preview_json = json.dumps(rag_preview_data or {}, ensure_ascii=False, default=str)
         total_edges = len(edges)
 
         if self.offline:
@@ -269,6 +237,29 @@ body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 .fb-btn.bad:hover,.fb-btn.bad.selected{{background:#4c1d2a;border-color:#ef4444;color:#f87171}}
 .recall-export{{margin-top:8px;padding-top:8px;border-top:1px solid #1e293b}}
 #tab-analysis .recall-card{{cursor:pointer}}
+.rag-panel{{display:flex;flex-direction:column;gap:10px}}
+.rag-search{{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}}
+.rag-textarea{{width:100%;min-height:72px;padding:9px 10px;border:1px solid #334155;border-radius:6px;background:#1a2332;color:#e5e7eb;font-size:12px;resize:vertical;outline:none}}
+.rag-textarea:focus{{border-color:#818cf8}}
+.rag-row{{display:flex;gap:6px}}
+.rag-select{{flex:1;padding:6px 8px;border:1px solid #334155;border-radius:4px;background:#1a2332;color:#94a3b8;font-size:11px}}
+.rag-run{{padding:6px 14px;border:none;border-radius:4px;background:#4f46e5;color:#fff;font-size:12px;cursor:pointer}}
+.rag-run:hover{{background:#4338ca}}
+.rag-summary{{padding:8px 10px;background:#1a2332;border-radius:5px;font-size:11px;color:#94a3b8;line-height:1.6}}
+.rag-section{{padding:10px;background:#1a2332;border:1px solid #1e293b;border-radius:6px}}
+.rag-section h4{{font-size:12px;color:#cbd5e1;margin-bottom:8px}}
+.rag-item{{padding:7px 8px;background:#111827;border-radius:5px;margin-bottom:6px}}
+.rag-item:last-child{{margin-bottom:0}}
+.rag-title{{font-size:12px;color:#e5e7eb;font-weight:600;margin-bottom:4px}}
+.rag-meta{{font-size:10px;color:#64748b;line-height:1.5}}
+.rag-tags{{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}}
+.rag-tag{{padding:2px 6px;background:#243041;border-radius:10px;font-size:10px;color:#93c5fd}}
+.rag-table{{width:100%;border-collapse:collapse;font-size:11px}}
+.rag-table th{{text-align:left;padding:4px 6px;background:#243041;color:#94a3b8}}
+.rag-table td{{padding:4px 6px;border-bottom:1px solid #1e293b;color:#cbd5e1;vertical-align:top}}
+.rag-empty{{text-align:center;padding:18px;color:#475569;font-size:12px}}
+.rag-hint{{padding:8px 10px;border-left:3px solid #818cf8;background:#111827;border-radius:4px;margin-bottom:6px;font-size:11px;color:#cbd5e1}}
+.rag-code{{font-family:Consolas,monospace;color:#fbbf24}}
 .node-tooltip{{background:rgba(15,23,42,.95);color:#e2e8f0;padding:8px 12px;border-radius:6px;font-size:12px;line-height:1.5;max-width:300px;pointer-events:none;border:1px solid rgba(129,140,248,.3);backdrop-filter:blur(8px)}}
 .node-tooltip strong{{color:#a5b4fc}}
 #detail-content table{{width:100%;font-size:11px;border-collapse:collapse;margin-bottom:10px}}
@@ -312,6 +303,7 @@ body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
         <div class="tab-bar">
             <button class="tab-btn active" onclick="switchTab('legend')">图例</button>
             <button class="tab-btn" onclick="switchTab('analysis')">分析</button>
+            <button class="tab-btn" onclick="switchTab('rag')">RAG</button>
             <button class="tab-btn" onclick="switchTab('recall')">召回</button>
             <button class="tab-btn" onclick="switchTab('detail')">详情</button>
         </div>
@@ -360,6 +352,27 @@ body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
                 <div style="color:#475569;text-align:center;padding:20px">分析数据加载中...</div>
             </div>
         </div>
+        <div id="tab-rag" class="tab-content">
+            <div class="rag-panel">
+                <div class="rag-search">
+                    <textarea id="rag-query" class="rag-textarea" placeholder="输入问题，例如：分析 LiBao 表价格和折扣分布，看看是否有异常档位"></textarea>
+                    <div class="rag-row">
+                        <select id="rag-mode" class="rag-select">
+                            <option value="auto">自动判断</option>
+                            <option value="lookup">配置查询</option>
+                            <option value="analysis">数值分析</option>
+                        </select>
+                        <select id="rag-topk" class="rag-select">
+                            <option value="3">Top 3 表</option>
+                            <option value="5" selected>Top 5 表</option>
+                            <option value="8">Top 8 表</option>
+                        </select>
+                        <button class="rag-run" onclick="runRagView()">生成证据</button>
+                    </div>
+                </div>
+                <div id="rag-content" class="rag-empty">输入问题后可同时查看图谱命中结果和 RAG 证据摘要</div>
+            </div>
+        </div>
         <div id="tab-recall" class="tab-content">
             <div class="recall-search">
                 <input class="recall-input" id="recall-input" type="text"
@@ -400,8 +413,11 @@ body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 // ===== DATA =====
 const nodesData = {nodes_json};
 const edgesData = {edges_json};
-const tablesMeta = {tables_meta_json};
-const analysisData = {analysis_json};
+const ragPreviewData = {rag_preview_json};
+const ragTables = ragPreviewData.tables || {{}};
+const ragRelations = ragPreviewData.relations || [];
+const tablesMeta = ragTables;
+const analysisData = ragPreviewData.analysis || {{}};
 
 const groupColors = {{
     hero:'#ff6b6b', skill:'#feca57', battle:'#ff9ff3',
@@ -424,6 +440,7 @@ let linksOn = true, dagMode = null, minConf = 0.7;
 let hlNodes = new Set(), hlLinks = new Set();
 let focusedNid = null;
 let recallHistory = [];
+let currentRagEvidence = null;
 
 // ===== TABS =====
 function switchTab(t) {{
@@ -711,7 +728,7 @@ function showNodeDetail(nid) {{
         else if (t===nid) inRels.push(e);
     }});
     const colsHtml = (m.columns||[]).map(c =>
-        '<tr><td style="font-weight:500">'+c.name+'</td><td>'+c.dtype+'</td><td>'+(c.samples||[]).slice(0,3).join(', ')+'</td></tr>'
+        '<tr><td style="font-weight:500">'+c.name+'</td><td>'+c.dtype+'</td><td>'+(c.sample_values||[]).slice(0,3).join(', ')+'</td></tr>'
     ).join('');
     function relCard(r, dir) {{
         const s = typeof r.source==='object'?r.source.id:r.source;
@@ -738,7 +755,7 @@ function showNodeDetail(nid) {{
         '<h3 style="font-size:15px;margin-bottom:6px;color:#e2e8f0">'+nid+'</h3>'
         + '<div style="font-size:11px;color:#64748b;margin-bottom:10px">'
         + '行 '+m.row_count+' | 列 '+(m.columns||[]).length+' | PK: '+(m.primary_key||'-')
-        + '<br>'+m.file_path+'</div>'
+        + '<br>'+(m.file || '-')+(m.sheet ? ' / '+m.sheet : '')+'</div>'
         + '<div style="font-size:12px;font-weight:500;color:#94a3b8;margin-bottom:4px">列结构</div>'
         + '<table><tr><th>列名</th><th>类型</th><th>示例</th></tr>'+colsHtml+'</table>'
         + '<div style="font-size:12px;font-weight:500;color:#60a5fa;margin:10px 0 4px;border-top:1px solid #1e293b;padding-top:10px">引用了 → ('+outRels.length+')</div>'
@@ -1003,6 +1020,295 @@ function renderAnalysis() {{
         html += '<div style="font-size:10px;color:#94a3b8;line-height:1.6;word-break:break-all">'+analysisData.critical_path.join(' → ')+'</div></div>';
     }}
     box.innerHTML = html || '<div style="color:#475569;text-align:center;padding:20px">无分析数据</div>';
+}}
+
+// ===== RAG VIEW =====
+function escapeHtml(v) {{
+    return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}}
+
+function ragTokens(query) {{
+    return (query.toLowerCase().match(/[\u4e00-\u9fff]{{2,}}|[a-z0-9_]+/g) || []).filter(Boolean);
+}}
+
+function isAnalysisQuery(query) {{
+    return /分析|分布|统计|均值|平均|离群|异常|趋势|风险|mean|distribution|stats|analy/i.test(query);
+}}
+
+function relationNeighbors(table) {{
+    return ragRelations.filter(e => e.from === table || e.to === table);
+}}
+
+function scoreTables(query) {{
+    const q = query.toLowerCase();
+    const tokens = ragTokens(query);
+    return Object.entries(ragTables).map(([name, meta]) => {{
+        let score = 0;
+        const reasons = [];
+        const n = name.toLowerCase();
+        if (q.includes(n) || n.includes(q)) {{ score += 20; reasons.push('表名命中'); }}
+        (meta.columns || []).forEach(col => {{
+            const cn = String(col.name || '').toLowerCase();
+            tokens.forEach(tok => {{
+                if (tok && cn === tok) {{ score += 10; reasons.push('列名精确命中:'+tok); }}
+                else if (tok && cn.includes(tok)) {{ score += 6; reasons.push('列名包含:'+tok); }}
+            }});
+        }});
+        tokens.forEach(tok => {{
+            if (tok && n.includes(tok)) {{ score += 8; reasons.push('表名包含:'+tok); }}
+        }});
+        const relCount = relationNeighbors(name).filter(r => r.confidence >= minConf).length;
+        score += Math.min(6, relCount * 0.5);
+        if (relCount) reasons.push('关联表加权');
+        return {{ table:name, score, reasons:[...new Set(reasons)].slice(0,4), meta }};
+    }}).filter(x => x.score > 0).sort((a,b) => b.score-a.score);
+}}
+
+function selectColumns(meta, query, maxCols=12) {{
+    const q = query.toLowerCase();
+    const tokens = ragTokens(query);
+    const cols = (meta.columns || []).map(col => {{
+        let score = 0;
+        const name = String(col.name || '').toLowerCase();
+        const sem = col.semantic_type || '';
+        if (col.is_pk) score += 100;
+        if (col.is_fk) score += 50;
+        if (sem === 'identifier' || sem === 'enum' || sem === 'flag') score += 25;
+        if (sem === 'metric') score += 20;
+        if (sem === 'descriptor') score += 10;
+        tokens.forEach(tok => {{
+            if (tok && name === tok) score += 18;
+            else if (tok && name.includes(tok)) score += 12;
+            if (tok && String(col.metric_tag || '').toLowerCase().includes(tok)) score += 10;
+            if (tok && String(col.domain_role || '').toLowerCase().includes(tok)) score += 10;
+        }});
+        return {{ score, col }};
+    }}).sort((a,b) => b.score-a.score);
+    return cols.slice(0, maxCols).map(x => x.col);
+}}
+
+function buildVisibleAnalytics(meta) {{
+    const metrics = (meta.columns || []).filter(c => c.semantic_type === 'metric' || c.dtype === 'int' || c.dtype === 'float');
+    const enums = (meta.columns || []).filter(c => c.is_enum && (c.enum_values||[]).length);
+    return {{
+        global_stats: metrics.slice(0, 8).map(c => ({{
+            column: c.name,
+            stats: c.stats || null
+        }})),
+        groups: enums.slice(0, 4).map(c => ({{
+            column: c.name,
+            total_groups: (c.enum_values || []).length,
+            visible_groups: (c.enum_values || []).slice(0, 8)
+        }}))
+    }};
+}}
+
+function buildRagEvidence(query, mode, topK) {{
+    const analysisMode = mode === 'analysis' ? true : (mode === 'lookup' ? false : isAnalysisQuery(query));
+    const ranked = scoreTables(query).slice(0, topK);
+    const selectedTables = ranked.map(x => x.table);
+    const schema = ranked.map(item => {{
+        const selectedCols = selectColumns(item.meta, query, 12);
+        return {{
+            table: item.table,
+            row_count: item.meta.row_count || 0,
+            primary_key: item.meta.primary_key || null,
+            total_columns: (item.meta.columns || []).length,
+            selected_columns: selectedCols.length,
+            columns: selectedCols
+        }};
+    }});
+    const joins = [];
+    ragRelations.forEach(e => {{
+        const s = e.from, t = e.to;
+        if (selectedTables.includes(s) && selectedTables.includes(t) && e.confidence >= minConf) {{
+            joins.push({{
+                from: s, to: t, label: e.label, confidence: e.confidence
+            }});
+        }}
+    }});
+    const statSummary = [];
+    const hiddenSchema = [];
+    const analyticsVisible = [];
+    const analyticsHidden = [];
+    schema.forEach(item => {{
+        if (item.total_columns > item.selected_columns) {{
+            hiddenSchema.push({{
+                table: item.table,
+                hidden_columns: item.total_columns - item.selected_columns,
+                selected_columns: item.selected_columns,
+                total_columns: item.total_columns
+            }});
+        }}
+        (item.columns || []).forEach(c => {{
+            if (c.semantic_type === 'metric' && c.stats) {{
+                statSummary.push({{ table:item.table, column:c.name, semantic_type:'metric', metric_tag:c.metric_tag || '', stats:c.stats }});
+            }} else if (c.is_enum && (c.enum_values||[]).length) {{
+                statSummary.push({{ table:item.table, column:c.name, semantic_type:'enum', enum_values:(c.enum_values||[]).slice(0, 10) }});
+            }}
+        }});
+        if (analysisMode) {{
+            const visible = buildVisibleAnalytics(item.meta);
+            analyticsVisible.push({{ table:item.table, ...visible }});
+            const enumCols = (item.meta.columns || []).filter(c => c.is_enum && (c.enum_values||[]).length > 8);
+            const metricCols = (item.meta.columns || []).filter(c => (c.semantic_type === 'metric' || c.dtype === 'int' || c.dtype === 'float'));
+            if (enumCols.length || metricCols.length > 8) {{
+                analyticsHidden.push({{
+                    table: item.table,
+                    hidden_group_columns: enumCols.map(c => ({{
+                        group_col: c.name,
+                        total_groups: (c.enum_values || []).length,
+                        visible_groups: Math.min(8, (c.enum_values || []).length)
+                    }})),
+                    hidden_global_stats: Math.max(0, metricCols.length - 8)
+                }});
+            }}
+        }}
+    }});
+    const fetchHints = [];
+    hiddenSchema.forEach(h => fetchHints.push({{
+        type:'expand_schema',
+        reason:`${{h.table}} 当前仅展示 ${{h.selected_columns}}/${{h.total_columns}} 列，可继续展开完整 schema`,
+        suggested_args:{{ table:h.table, include_all_columns:true }}
+    }}));
+    analyticsHidden.forEach(h => {{
+        h.hidden_group_columns.forEach(g => fetchHints.push({{
+            type:'expand_analysis_groups',
+            reason:`${{h.table}}.${{g.group_col}} 共有 ${{g.total_groups}} 个分组，首屏仅建议展示 ${{g.visible_groups}} 个`,
+            suggested_args:{{ table:h.table, group_col:g.group_col, include_all_groups:true }}
+        }}));
+        if (h.hidden_global_stats > 0) {{
+            fetchHints.push({{
+                type:'expand_global_stats',
+                reason:`${{h.table}} 还有 ${{h.hidden_global_stats}} 个数值统计未首屏展示`,
+                suggested_args:{{ table:h.table, include_all_metrics:true }}
+            }});
+        }}
+    }});
+    if (joins.length) {{
+        fetchHints.push({{
+            type:'expand_join_paths',
+            reason:'当前仅展示命中的表间直接关系，可继续查看更完整的业务链路',
+            suggested_args:{{ tables:selectedTables, include_all_join_paths:true }}
+        }});
+    }}
+    return {{
+        query,
+        analysis_mode: analysisMode,
+        ranked_tables: ranked,
+        schema,
+        joins,
+        stat_summary: statSummary,
+        analytical_result_visible: analyticsVisible,
+        hidden_but_available: {{
+            schema: hiddenSchema,
+            analytics: analyticsHidden
+        }},
+        fetch_hints: fetchHints.slice(0, 10)
+    }};
+}}
+
+function renderRagEvidence(ev) {{
+    const box = document.getElementById('rag-content');
+    if (!ev || !ev.ranked_tables.length) {{
+        box.className = 'rag-empty';
+        box.innerHTML = '未找到可用的 RAG 证据候选表';
+        return;
+    }}
+    box.className = '';
+    const summary = `
+        <div class="rag-summary">
+            当前模式: <strong>${{ev.analysis_mode ? '数值分析' : '配置查询'}}</strong><br>
+            命中表: <strong>${{ev.ranked_tables.length}}</strong> 张<br>
+            首轮策略: 先展示摘要证据，若不足再根据 <span class="rag-code">fetch_hints</span> 继续展开
+        </div>`;
+    const tablesHtml = ev.ranked_tables.map(item => `
+        <div class="rag-item" onclick="focusNode('${{item.table}}')">
+            <div class="rag-title">${{escapeHtml(item.table)}}</div>
+            <div class="rag-meta">score=${{item.score.toFixed(2)}} | 行数=${{item.meta.row_count || 0}} | 列数=${{(item.meta.columns||[]).length}}</div>
+            <div class="rag-tags">${{item.reasons.map(r => `<span class="rag-tag">${{escapeHtml(r)}}</span>`).join('')}}</div>
+        </div>`).join('');
+    const schemaHtml = ev.schema.map(item => `
+        <div class="rag-item">
+            <div class="rag-title">${{escapeHtml(item.table)}} | 列 ${{item.selected_columns}}/${{item.total_columns}}</div>
+            <div class="rag-tags">${{item.columns.map(c => `<span class="rag-tag">${{escapeHtml(c.name)}}${{c.semantic_type ? ' ['+escapeHtml(c.semantic_type)+']' : ''}}</span>`).join('')}}</div>
+        </div>`).join('');
+    const joinHtml = ev.joins.length ? `
+        <table class="rag-table">
+            <tr><th>From</th><th>To</th><th>Join</th><th>Conf</th></tr>
+            ${{ev.joins.map(j => `<tr><td>${{escapeHtml(j.from)}}</td><td>${{escapeHtml(j.to)}}</td><td>${{escapeHtml(j.label)}}</td><td>${{j.confidence.toFixed(2)}}</td></tr>`).join('')}}
+        </table>` : '<div class="rag-empty">当前命中表之间没有可见直接关系</div>';
+    const statHtml = ev.stat_summary.length ? `
+        <table class="rag-table">
+            <tr><th>表</th><th>字段</th><th>摘要</th></tr>
+            ${{ev.stat_summary.map(s => `<tr><td>${{escapeHtml(s.table)}}</td><td>${{escapeHtml(s.column)}}</td><td>${{s.semantic_type==='metric'
+                ? 'min='+escapeHtml(s.stats?.min)+' max='+escapeHtml(s.stats?.max)+' mean='+escapeHtml(s.stats?.mean)
+                : '枚举: '+escapeHtml((s.enum_values||[]).join(', '))}}</td></tr>`).join('')}}
+        </table>` : '<div class="rag-empty">当前无可展示统计摘要</div>';
+    const anaHtml = ev.analysis_mode ? ev.analytical_result_visible.map(a => `
+        <div class="rag-item">
+            <div class="rag-title">${{escapeHtml(a.table)}} | 可见分析摘要</div>
+            <div class="rag-meta">数值列: ${{a.global_stats.length}} | 分组列: ${{a.groups.length}}</div>
+            ${{
+                a.global_stats.length
+                ? `<div class="rag-tags">${{a.global_stats.map(g => `<span class="rag-tag">${{escapeHtml(g.column)}}${{g.stats ? ' '+escapeHtml(g.stats.min)+'~'+escapeHtml(g.stats.max) : ''}}</span>`).join('')}}</div>`
+                : '<div class="rag-meta">无数值列摘要</div>'
+            }}
+            ${{
+                a.groups.length
+                ? `<div class="rag-meta" style="margin-top:6px">${{a.groups.map(g => `${{escapeHtml(g.column)}}: ${{g.visible_groups.join(', ')}}${{g.total_groups > g.visible_groups.length ? ' ...' : ''}}`).join('<br>')}}</div>`
+                : ''
+            }}
+        </div>`).join('') : '<div class="rag-empty">当前问题按配置查询模式处理</div>';
+    const hiddenHtml = (ev.hidden_but_available.schema.length || ev.hidden_but_available.analytics.length) ? `
+        <div class="rag-section">
+            <h4>可继续展开</h4>
+            ${{
+                ev.hidden_but_available.schema.map(h => `<div class="rag-hint">${{escapeHtml(h.table)}} 还有 ${{h.hidden_columns}} 列未展示</div>`).join('')
+            }}
+            ${{
+                ev.hidden_but_available.analytics.map(h => `<div class="rag-hint">${{escapeHtml(h.table)}} 还有更完整的分组统计或全局指标可继续展开</div>`).join('')
+            }}
+        </div>` : '';
+    const hintsHtml = ev.fetch_hints.length ? `
+        <div class="rag-section">
+            <h4>Fetch Hints</h4>
+            ${{
+                ev.fetch_hints.map(h => `<div class="rag-hint"><div>${{escapeHtml(h.reason)}}</div><div class="rag-meta">type=${{escapeHtml(h.type)}} | args=${{escapeHtml(JSON.stringify(h.suggested_args))}}</div></div>`).join('')
+            }}
+        </div>` : '';
+    box.innerHTML = `
+        ${{summary}}
+        <div class="rag-section"><h4>命中表</h4>${{tablesHtml}}</div>
+        <div class="rag-section"><h4>Schema 摘要</h4>${{schemaHtml}}</div>
+        <div class="rag-section"><h4>JOIN 摘要</h4>${{joinHtml}}</div>
+        <div class="rag-section"><h4>统计摘要</h4>${{statHtml}}</div>
+        <div class="rag-section"><h4>RAG 分析摘要</h4>${{anaHtml}}</div>
+        ${{hiddenHtml}}
+        ${{hintsHtml}}
+    `;
+}}
+
+function runRagView() {{
+    const query = document.getElementById('rag-query').value.trim();
+    if (!query) return;
+    const mode = document.getElementById('rag-mode').value;
+    const topK = parseInt(document.getElementById('rag-topk').value || '5', 10);
+    currentRagEvidence = buildRagEvidence(query, mode, topK);
+    renderRagEvidence(currentRagEvidence);
+    const tables = currentRagEvidence.ranked_tables.map(x => x.table);
+    if (tables.length) {{
+        hlNodes = new Set(tables);
+        hlLinks = new Set();
+        G.graphData().links.forEach(lk => {{
+            const s = typeof lk.source==='object'?lk.source.id:lk.source;
+            const t = typeof lk.target==='object'?lk.target.id:lk.target;
+            if (hlNodes.has(s) || hlNodes.has(t)) hlLinks.add(lk);
+        }});
+        refreshHL();
+        G.zoomToFit(500, 50, n => hlNodes.has(n.id));
+    }}
+    switchTab('rag');
 }}
 
 // ===== START =====
